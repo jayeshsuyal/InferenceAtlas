@@ -54,6 +54,14 @@ class LLMRouter:
 
         Tries providers in order and returns first schema-valid result.
         """
+        workload, _, _ = self.parse_workload_with_meta(user_text)
+        return workload
+
+    def parse_workload_with_meta(
+        self,
+        user_text: str,
+    ) -> tuple[WorkloadSpec, str, dict[str, object]]:
+        """Parse workload and return provider + raw payload metadata."""
         errors: list[str] = []
         for provider_name in self._provider_order():
             adapter = self.adapters.get(provider_name)
@@ -62,7 +70,10 @@ class LLMRouter:
                 continue
             try:
                 raw_payload = adapter.parse_workload(user_text)
-                return validate_workload_payload(raw_payload)
+                workload = validate_workload_payload(raw_payload)
+                if not isinstance(raw_payload, dict):
+                    raw_payload = dict(raw_payload)
+                return workload, provider_name, raw_payload
             except Exception as exc:  # noqa: BLE001 - router must catch adapter errors
                 errors.append(f"{provider_name}: {exc}")
 

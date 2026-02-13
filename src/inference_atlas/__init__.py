@@ -20,8 +20,10 @@ from inference_atlas.llm import (
     LLMAdapter,
     LLMRouter,
     Opus46Adapter,
+    ParseWorkloadResult,
     RouterConfig,
     WorkloadSpec,
+    parse_workload_text,
     validate_workload_payload,
 )
 from inference_atlas.recommender import Recommendation, compute_penalty, get_recommendations
@@ -60,6 +62,8 @@ __all__ = [
     "Opus46Adapter",
     "LLMRouter",
     "RouterConfig",
+    "ParseWorkloadResult",
+    "parse_workload_text",
     "WorkloadSpec",
     "validate_workload_payload",
 ]

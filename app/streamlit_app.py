@@ -6,6 +6,7 @@ import streamlit as st
 
 from inference_atlas import get_recommendations
 from inference_atlas.data_loader import get_models
+from inference_atlas.llm import WorkloadSpec, parse_workload_text
 
 st.set_page_config(page_title="InferenceAtlas", layout="centered")
 
@@ -50,6 +51,20 @@ with st.form("inputs"):
         step=10.0,
         help="Set to 0 to ignore latency constraint. <300ms triggers strict latency penalties.",
     )
+    use_ai_parse = st.checkbox(
+        "Use AI parser (beta)",
+        value=False,
+        help="Parse natural-language workload text into structured inputs.",
+    )
+    workload_text = st.text_area(
+        "Workload description (optional)",
+        value="",
+        placeholder=(
+            "Example: Llama 70B support bot, 8M tokens/day, business hours traffic, "
+            "strict latency under 250ms."
+        ),
+        help="Used only when AI parser is enabled.",
+    )
 
     submit = st.form_submit_button("Get Recommendations")
 
@@ -60,13 +75,43 @@ if submit:
         "Bursty": "bursty",
     }
     latency = latency_requirement_ms if latency_requirement_ms > 0 else None
+    manual_workload = WorkloadSpec(
+        tokens_per_day=float(tokens_per_day),
+        pattern=pattern_map[pattern_label],
+        model_key=model_key,
+        latency_requirement_ms=latency,
+    )
+
+    effective_workload = manual_workload
+    if use_ai_parse and workload_text.strip():
+        parse_result = parse_workload_text(
+            user_text=workload_text,
+            fallback_workload=manual_workload,
+        )
+        effective_workload = parse_result.workload
+        if parse_result.used_fallback:
+            st.warning(
+                "AI parser unavailable. Used manual form values instead."
+            )
+            if parse_result.warning:
+                st.caption(parse_result.warning)
+        else:
+            st.success(f"Parsed with provider: {parse_result.provider_used}")
+            st.json(
+                {
+                    "tokens_per_day": parse_result.workload.tokens_per_day,
+                    "pattern": parse_result.workload.pattern,
+                    "model_key": parse_result.workload.model_key,
+                    "latency_requirement_ms": parse_result.workload.latency_requirement_ms,
+                }
+            )
 
     try:
         recommendations = get_recommendations(
-            tokens_per_day=tokens_per_day,
-            pattern=pattern_map[pattern_label],
-            model_key=model_key,
-            latency_requirement_ms=latency,
+            tokens_per_day=effective_workload.tokens_per_day,
+            pattern=effective_workload.pattern,
+            model_key=effective_workload.model_key,
+            latency_requirement_ms=effective_workload.latency_requirement_ms,
             top_k=3,
         )
     except ValueError as exc:
