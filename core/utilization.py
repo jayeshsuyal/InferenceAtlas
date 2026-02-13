@@ -11,11 +11,14 @@ Example:
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 
 from data.performance import TRAFFIC_PATTERNS
 
-HOURS_PER_MONTH = 730
-SECONDS_PER_DAY = 24 * 60 * 60
+HOURS_PER_MONTH = 720
+SECONDS_PER_DAY = 86_400
+U_TARGET = 0.75
+MAX_GPUS = 8
 
 
 @dataclass(frozen=True)
@@ -26,6 +29,7 @@ class TrafficProfile:
     active_ratio: float
     efficiency: float
     burst_factor: float
+    batch_mult: float
 
 
 @dataclass(frozen=True)
@@ -37,6 +41,8 @@ class UtilizationEstimate:
     required_peak_tokens_per_second: float
     effective_gpu_tokens_per_second: float
     utilization_ratio: float
+    gpu_count: int = 1
+    utilization_after: float = 0.0
 
 
 def get_traffic_profile(pattern: str) -> TrafficProfile:
@@ -52,6 +58,7 @@ def get_traffic_profile(pattern: str) -> TrafficProfile:
         active_ratio=float(config["active_ratio"]),
         efficiency=float(config["efficiency"]),
         burst_factor=float(config["burst_factor"]),
+        batch_mult=float(config["batch_mult"]),
     )
     if profile.active_ratio <= 0:
         raise ValueError(
@@ -68,6 +75,11 @@ def get_traffic_profile(pattern: str) -> TrafficProfile:
             f"Traffic pattern '{pattern}' has invalid burst_factor={profile.burst_factor}. "
             "burst_factor must be > 0."
         )
+    if profile.batch_mult <= 0:
+        raise ValueError(
+            f"Traffic pattern '{pattern}' has invalid batch_mult={profile.batch_mult}. "
+            "batch_mult must be > 0."
+        )
     return profile
 
 
@@ -83,7 +95,7 @@ def calculate_utilization(
     average_tps_global / active_ratio * burst_factor
 
     The effective GPU throughput is:
-    gpu_tokens_per_second * efficiency
+    gpu_tokens_per_second * efficiency * batch_mult
     """
     if float(tokens_per_day) <= 0:
         raise ValueError(
@@ -100,8 +112,12 @@ def calculate_utilization(
 
     avg_tps_global = float(tokens_per_day) / SECONDS_PER_DAY
     required_peak_tps = avg_tps_global / profile.active_ratio * profile.burst_factor
-    effective_gpu_tps = float(gpu_tokens_per_second) * profile.efficiency
+    effective_gpu_tps = (
+        float(gpu_tokens_per_second) * profile.efficiency * profile.batch_mult
+    )
     utilization_ratio = required_peak_tps / effective_gpu_tps
+    gpu_count = max(1, math.ceil(utilization_ratio / U_TARGET))
+    utilization_after = utilization_ratio / gpu_count
 
     return UtilizationEstimate(
         active_hours_per_month=HOURS_PER_MONTH * profile.active_ratio,
@@ -109,4 +125,20 @@ def calculate_utilization(
         required_peak_tokens_per_second=required_peak_tps,
         effective_gpu_tokens_per_second=effective_gpu_tps,
         utilization_ratio=utilization_ratio,
+        gpu_count=gpu_count,
+        utilization_after=utilization_after,
     )
+
+
+def latency_risk_band(utilization_after: float) -> str:
+    """Return latency risk band based on post-scaling utilization.
+
+    low:    utilization_after <= 0.50
+    medium: utilization_after <= 0.75
+    high:   utilization_after > 0.75
+    """
+    if utilization_after <= 0.50:
+        return "low"
+    if utilization_after <= 0.75:
+        return "medium"
+    return "high"

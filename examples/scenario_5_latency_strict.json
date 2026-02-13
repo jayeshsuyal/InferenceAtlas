@@ -1,0 +1,8 @@
+{
+  "name": "Strict Latency Requirement",
+  "description": "Real-time chat app (200ms P99). High-utilization configs should be penalized.",
+  "model": "llama_70b",
+  "tokens_per_day": 8640000,
+  "traffic_pattern": "steady",
+  "latency_requirement_ms": 200
+}

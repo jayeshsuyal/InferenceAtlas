@@ -1,0 +1,8 @@
+{
+  "name": "High-Volume Production",
+  "description": "50M tokens/day steady traffic. Multi-GPU scaling should activate.",
+  "model": "mixtral_8x7b",
+  "tokens_per_day": 50000000,
+  "traffic_pattern": "steady",
+  "latency_requirement_ms": null
+}

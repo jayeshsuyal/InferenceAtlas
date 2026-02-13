@@ -1,0 +1,8 @@
+{
+  "name": "Small Steady Workload",
+  "description": "Low-volume 24/7 traffic with Llama 8B. Per-token platforms should be competitive.",
+  "model": "llama_8b",
+  "tokens_per_day": 864000,
+  "traffic_pattern": "steady",
+  "latency_requirement_ms": null
+}

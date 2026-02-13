@@ -1,0 +1,8 @@
+{
+  "name": "Large 405B Model",
+  "description": "10M tokens/day with massive 405B model. Only high-memory GPUs (H200/B200) viable.",
+  "model": "llama_405b",
+  "tokens_per_day": 10000000,
+  "traffic_pattern": "steady",
+  "latency_requirement_ms": null
+}

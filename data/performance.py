@@ -31,17 +31,23 @@ MODEL_REQUIREMENTS = {
 TRAFFIC_PATTERNS = {
     "steady": {
         "active_ratio": 1.0,
-        "efficiency": 0.80,
+        # Assumes steady traffic allows higher batching efficiency.
+        "efficiency": 0.85,
         "burst_factor": 1.0,
+        "batch_mult": 1.25,
     },
     "business_hours": {
         "active_ratio": 0.238,  # 40 hrs / 168 hrs
-        "efficiency": 0.75,
+        # Moderate batching during working hours.
+        "efficiency": 0.80,
         "burst_factor": 1.0,
+        "batch_mult": 1.10,
     },
     "bursty": {
         "active_ratio": 0.40,
-        "efficiency": 0.60,
+        # Bursty traffic: lower efficiency, but higher batch gains under load.
+        "efficiency": 0.70,
         "burst_factor": 3.0,
+        "batch_mult": 1.35,
     },
 }

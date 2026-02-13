@@ -1,0 +1,8 @@
+{
+  "name": "Medium Bursty Workload",
+  "description": "5M tokens/day with irregular spikes. Autoscaling should outperform dedicated.",
+  "model": "llama_70b",
+  "tokens_per_day": 5000000,
+  "traffic_pattern": "bursty",
+  "latency_requirement_ms": null
+}

@@ -1,0 +1,8 @@
+{
+  "name": "Business Hours Traffic",
+  "description": "5M tokens/day concentrated in 40 hours/week. Dedicated platforms waste 76% capacity.",
+  "model": "llama_70b",
+  "tokens_per_day": 5000000,
+  "traffic_pattern": "business_hours",
+  "latency_requirement_ms": null
+}

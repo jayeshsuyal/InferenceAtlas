@@ -1,0 +1,48 @@
+"""InferenceAtlas: LLM Deployment Cost Optimizer.
+
+A planning model for estimating GPU requirements and monthly costs for LLM deployments.
+Supports multi-GPU scaling, traffic pattern modeling, and cross-platform cost comparison.
+"""
+
+from __future__ import annotations
+
+__version__ = "0.1.0"
+
+# Public API exports
+from inference_atlas.cost_model import (
+    CostBreakdown,
+    calculate_gpu_monthly_cost,
+    calculate_per_token_monthly_cost,
+)
+from inference_atlas.data_loader import get_model_display_name, get_models, get_platforms
+from inference_atlas.recommender import Recommendation, compute_penalty, get_recommendations
+from inference_atlas.scaling import (
+    TrafficProfile,
+    UtilizationEstimate,
+    calculate_utilization,
+    get_traffic_profile,
+    latency_risk_band,
+)
+
+__all__ = [
+    # Version
+    "__version__",
+    # Recommendation engine
+    "get_recommendations",
+    "Recommendation",
+    "compute_penalty",
+    # Cost modeling
+    "calculate_gpu_monthly_cost",
+    "calculate_per_token_monthly_cost",
+    "CostBreakdown",
+    # Scaling & utilization
+    "calculate_utilization",
+    "get_traffic_profile",
+    "latency_risk_band",
+    "UtilizationEstimate",
+    "TrafficProfile",
+    # Data loading
+    "get_platforms",
+    "get_models",
+    "get_model_display_name",
+]
