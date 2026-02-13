@@ -15,6 +15,15 @@ from inference_atlas.cost_model import (
     calculate_per_token_monthly_cost,
 )
 from inference_atlas.data_loader import get_model_display_name, get_models, get_platforms
+from inference_atlas.llm import (
+    GPT52Adapter,
+    LLMAdapter,
+    LLMRouter,
+    Opus46Adapter,
+    RouterConfig,
+    WorkloadSpec,
+    validate_workload_payload,
+)
 from inference_atlas.recommender import Recommendation, compute_penalty, get_recommendations
 from inference_atlas.scaling import (
     TrafficProfile,
@@ -45,4 +54,12 @@ __all__ = [
     "get_platforms",
     "get_models",
     "get_model_display_name",
+    # LLM adapter layer
+    "LLMAdapter",
+    "GPT52Adapter",
+    "Opus46Adapter",
+    "LLMRouter",
+    "RouterConfig",
+    "WorkloadSpec",
+    "validate_workload_payload",
 ]
