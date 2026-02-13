@@ -1,24 +1,147 @@
-"""Stub adapter for GPT-5.2 integration."""
+"""GPT-5.2 adapter using the OpenAI Responses API."""
 
 from __future__ import annotations
 
-from typing import Any
+import json
+import os
+import time
+from typing import Any, Optional
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 from inference_atlas.llm.base import LLMAdapter
 from inference_atlas.llm.schema import WorkloadSpec
 
+OPENAI_API_URL = "https://api.openai.com/v1/responses"
+DEFAULT_MODEL = "gpt-5.2"
+RETRYABLE_STATUS_CODES = {408, 429, 500, 502, 503, 504}
+
+PARSE_SYSTEM_PROMPT = (
+    "Extract workload fields from user text. Return only valid JSON object with keys: "
+    "tokens_per_day (number), pattern (steady|business_hours|bursty), model_key (string), "
+    "latency_requirement_ms (number or null)."
+)
+
 
 class GPT52Adapter(LLMAdapter):
-    """GPT-5.2 adapter stub.
-
-    This class defines the integration boundary only. API calls are intentionally
-    not implemented in Step 1.
-    """
+    """GPT-5.2 adapter implementation."""
 
     provider_name = "gpt_5_2"
 
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        model: Optional[str] = None,
+        timeout_sec: int = 30,
+        max_retries: int = 2,
+        backoff_base_sec: float = 0.5,
+    ) -> None:
+        self.api_key = api_key or os.getenv("OPENAI_API_KEY", "")
+        self.model = model or os.getenv("OPENAI_MODEL", DEFAULT_MODEL)
+        self.timeout_sec = timeout_sec
+        self.max_retries = max_retries
+        self.backoff_base_sec = backoff_base_sec
+        if self.timeout_sec <= 0:
+            raise ValueError("timeout_sec must be > 0.")
+        if self.max_retries < 0:
+            raise ValueError("max_retries must be >= 0.")
+        if self.backoff_base_sec < 0:
+            raise ValueError("backoff_base_sec must be >= 0.")
+
+    def _ensure_api_key(self) -> None:
+        if not self.api_key:
+            raise RuntimeError("OPENAI_API_KEY is not configured.")
+
+    def _generate_text(self, system_prompt: str, user_prompt: str) -> str:
+        """Send a prompt to the OpenAI Responses API and return text output."""
+        self._ensure_api_key()
+        body = {
+            "model": self.model,
+            "input": [
+                {
+                    "role": "system",
+                    "content": [{"type": "input_text", "text": system_prompt}],
+                },
+                {
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": user_prompt}],
+                },
+            ],
+        }
+        request = Request(
+            OPENAI_API_URL,
+            data=json.dumps(body).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        payload: dict[str, Any]
+        for attempt in range(self.max_retries + 1):
+            try:
+                with urlopen(request, timeout=self.timeout_sec) as response:
+                    payload = json.loads(response.read().decode("utf-8"))
+                break
+            except HTTPError as exc:
+                status_code = getattr(exc, "code", None)
+                is_retryable = status_code in RETRYABLE_STATUS_CODES
+                if is_retryable and attempt < self.max_retries:
+                    time.sleep(self.backoff_base_sec * (2**attempt))
+                    continue
+                raise RuntimeError(
+                    f"OpenAI request failed with status {status_code}."
+                ) from exc
+            except URLError as exc:
+                if attempt < self.max_retries:
+                    time.sleep(self.backoff_base_sec * (2**attempt))
+                    continue
+                raise RuntimeError("OpenAI connection failed.") from exc
+
+        if isinstance(payload.get("output_text"), str) and payload["output_text"].strip():
+            return payload["output_text"].strip()
+
+        # Fallback extraction for output blocks.
+        output = payload.get("output", [])
+        for item in output:
+            for content in item.get("content", []):
+                text = content.get("text")
+                if isinstance(text, str) and text.strip():
+                    return text.strip()
+
+        raise RuntimeError("OpenAI response did not contain text output.")
+
+    @staticmethod
+    def _extract_json_object(text: str) -> dict[str, Any]:
+        """Extract a JSON object from model output text."""
+        candidate = text.strip()
+        try:
+            parsed = json.loads(candidate)
+            if isinstance(parsed, dict):
+                return parsed
+        except json.JSONDecodeError:
+            pass
+
+        start = candidate.find("{")
+        end = candidate.rfind("}")
+        if start >= 0 and end > start:
+            snippet = candidate[start : end + 1]
+            parsed = json.loads(snippet)
+            if isinstance(parsed, dict):
+                return parsed
+        raise RuntimeError("OpenAI parse response was not valid JSON object.")
+
     def parse_workload(self, user_text: str) -> dict[str, Any]:
-        raise NotImplementedError("GPT-5.2 adapter not configured yet.")
+        text = self._generate_text(PARSE_SYSTEM_PROMPT, user_text)
+        return self._extract_json_object(text)
 
     def explain(self, recommendation_summary: str, workload: WorkloadSpec) -> str:
-        raise NotImplementedError("GPT-5.2 adapter not configured yet.")
+        prompt = (
+            "Explain the deterministic recommendation in 4-6 concise bullet points. "
+            "Do not fabricate metrics. Use these inputs and summary.\n\n"
+            f"Workload: {workload}\n"
+            f"Summary:\n{recommendation_summary}"
+        )
+        return self._generate_text(
+            "You are an infra assistant. Keep explanations precise and grounded.", prompt
+        )

@@ -70,7 +70,9 @@ def test_parse_workload_text_fallback_path() -> None:
     assert result.used_fallback is True
     assert result.provider_used == "manual_fallback"
     assert result.workload == manual
-    assert result.warning is not None
+    assert result.warning == "AI parser unavailable. Used manual form values."
+    assert result.debug_details is not None
+    assert "provider unavailable" in result.debug_details
 
 
 def test_parse_workload_text_schema_rejection_raises_without_fallback() -> None:

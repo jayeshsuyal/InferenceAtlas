@@ -18,6 +18,7 @@ class ParseWorkloadResult:
     raw_payload: dict[str, object]
     used_fallback: bool = False
     warning: Optional[str] = None
+    debug_details: Optional[str] = None
 
 
 def parse_workload_text(
@@ -48,5 +49,6 @@ def parse_workload_text(
             provider_used="manual_fallback",
             raw_payload={},
             used_fallback=True,
-            warning=str(exc),
+            warning="AI parser unavailable. Used manual form values.",
+            debug_details=str(exc),
         )
