@@ -1,30 +1,26 @@
-"""GPT-5.2 adapter using the OpenAI Responses API."""
+"""GPT adapter using the OpenAI API."""
 
 from __future__ import annotations
 
 import json
 import os
-import time
 from typing import Any, Optional
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+
+try:
+    from openai import OpenAI, RateLimitError
+except ImportError:  # pragma: no cover - handled at runtime
+    OpenAI = None  # type: ignore[assignment]
+    RateLimitError = Exception  # type: ignore[assignment]
 
 from inference_atlas.llm.base import LLMAdapter
 from inference_atlas.llm.schema import WorkloadSpec
 
-OPENAI_API_URL = "https://api.openai.com/v1/responses"
-DEFAULT_MODEL = "gpt-5.2"
-RETRYABLE_STATUS_CODES = {408, 429, 500, 502, 503, 504}
-
-PARSE_SYSTEM_PROMPT = (
-    "Extract workload fields from user text. Return only valid JSON object with keys: "
-    "tokens_per_day (number), pattern (steady|business_hours|bursty), model_key (string), "
-    "latency_requirement_ms (number or null)."
-)
+PRIMARY_MODEL = "gpt-4-turbo"
+FALLBACK_MODEL = "gpt-4"
 
 
 class GPT52Adapter(LLMAdapter):
-    """GPT-5.2 adapter implementation."""
+    """OpenAI-backed adapter for parsing workloads and explaining recommendations."""
 
     provider_name = "gpt_5_2"
 
@@ -33,83 +29,60 @@ class GPT52Adapter(LLMAdapter):
         api_key: Optional[str] = None,
         model: Optional[str] = None,
         timeout_sec: int = 30,
-        max_retries: int = 2,
-        backoff_base_sec: float = 0.5,
+        client: Any = None,
+        base_url: Optional[str] = None,
     ) -> None:
         self.api_key = api_key or os.getenv("OPENAI_API_KEY", "")
-        self.model = model or os.getenv("OPENAI_MODEL", DEFAULT_MODEL)
+        self.model = model or os.getenv("OPENAI_MODEL", PRIMARY_MODEL)
         self.timeout_sec = timeout_sec
-        self.max_retries = max_retries
-        self.backoff_base_sec = backoff_base_sec
+        self.base_url = base_url or os.getenv("OPENAI_BASE_URL")
         if self.timeout_sec <= 0:
             raise ValueError("timeout_sec must be > 0.")
-        if self.max_retries < 0:
-            raise ValueError("max_retries must be >= 0.")
-        if self.backoff_base_sec < 0:
-            raise ValueError("backoff_base_sec must be >= 0.")
+        self._ensure_api_key()
+        if client is not None:
+            self.client = client
+        else:
+            if OpenAI is None:
+                raise RuntimeError(
+                    "openai package is not installed. Install with: pip install openai>=1.0.0"
+                )
+            if self.base_url:
+                self.client = OpenAI(api_key=self.api_key, base_url=self.base_url)
+            else:
+                self.client = OpenAI(api_key=self.api_key)
+        self._model_candidates = [self.model]
+        if self.model != FALLBACK_MODEL:
+            self._model_candidates.append(FALLBACK_MODEL)
 
     def _ensure_api_key(self) -> None:
         if not self.api_key:
-            raise RuntimeError("OPENAI_API_KEY is not configured.")
+            raise ValueError("OPENAI_API_KEY not set")
+
+    def _responses_text(self, system_prompt: str, user_prompt: str, model: str) -> str:
+        response = self.client.responses.create(
+            model=model,
+            input=[
+                {"role": "system", "content": [{"type": "input_text", "text": system_prompt}]},
+                {"role": "user", "content": [{"type": "input_text", "text": user_prompt}]},
+            ],
+            timeout=self.timeout_sec,
+        )
+        output_text = getattr(response, "output_text", None)
+        if isinstance(output_text, str) and output_text.strip():
+            return output_text.strip()
+        raise RuntimeError("OpenAI response did not contain text output.")
 
     def _generate_text(self, system_prompt: str, user_prompt: str) -> str:
-        """Send a prompt to the OpenAI Responses API and return text output."""
-        self._ensure_api_key()
-        body = {
-            "model": self.model,
-            "input": [
-                {
-                    "role": "system",
-                    "content": [{"type": "input_text", "text": system_prompt}],
-                },
-                {
-                    "role": "user",
-                    "content": [{"type": "input_text", "text": user_prompt}],
-                },
-            ],
-        }
-        request = Request(
-            OPENAI_API_URL,
-            data=json.dumps(body).encode("utf-8"),
-            headers={
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json",
-            },
-            method="POST",
-        )
-        payload: dict[str, Any]
-        for attempt in range(self.max_retries + 1):
+        last_error: Optional[Exception] = None
+        for model_name in self._model_candidates:
             try:
-                with urlopen(request, timeout=self.timeout_sec) as response:
-                    payload = json.loads(response.read().decode("utf-8"))
-                break
-            except HTTPError as exc:
-                status_code = getattr(exc, "code", None)
-                is_retryable = status_code in RETRYABLE_STATUS_CODES
-                if is_retryable and attempt < self.max_retries:
-                    time.sleep(self.backoff_base_sec * (2**attempt))
-                    continue
-                raise RuntimeError(
-                    f"OpenAI request failed with status {status_code}."
-                ) from exc
-            except URLError as exc:
-                if attempt < self.max_retries:
-                    time.sleep(self.backoff_base_sec * (2**attempt))
-                    continue
-                raise RuntimeError("OpenAI connection failed.") from exc
-
-        if isinstance(payload.get("output_text"), str) and payload["output_text"].strip():
-            return payload["output_text"].strip()
-
-        # Fallback extraction for output blocks.
-        output = payload.get("output", [])
-        for item in output:
-            for content in item.get("content", []):
-                text = content.get("text")
-                if isinstance(text, str) and text.strip():
-                    return text.strip()
-
-        raise RuntimeError("OpenAI response did not contain text output.")
+                return self._responses_text(system_prompt, user_prompt, model_name)
+            except RateLimitError as exc:
+                raise RuntimeError("OpenAI rate limit exceeded. Please retry shortly.") from exc
+            except Exception as exc:  # noqa: BLE001 - fallback model probing
+                last_error = exc
+                continue
+        raise RuntimeError(f"OpenAI request failed: {last_error}")
 
     @staticmethod
     def _extract_json_object(text: str) -> dict[str, Any]:
@@ -132,16 +105,56 @@ class GPT52Adapter(LLMAdapter):
         raise RuntimeError("OpenAI parse response was not valid JSON object.")
 
     def parse_workload(self, user_text: str) -> dict[str, Any]:
-        text = self._generate_text(PARSE_SYSTEM_PROMPT, user_text)
-        return self._extract_json_object(text)
+        parser_prompt = f"""You are a workload parser for LLM deployment cost analysis.
+
+Extract these fields from the user's description:
+- tokens_per_day (float): Total tokens per day
+- pattern (string): Traffic pattern - must be one of: "steady", "business_hours", "bursty"
+- model_key (string): Model identifier - must be one of: "llama_8b", "llama_70b", "llama_405b", "mixtral_8x7b", "mistral_7b"
+- latency_requirement_ms (float, optional): Max latency in milliseconds, or null/omit if not specified
+
+Return ONLY valid JSON with these exact keys.
+
+Examples:
+User: "Chat app with 1000 daily active users, steady traffic, Llama 70B"
+Response: {{"tokens_per_day": 5000000, "pattern": "steady", "model_key": "llama_70b", "latency_requirement_ms": null}}
+
+User: "API serving 10M tokens/day during business hours, need <200ms P99, using Mistral 7B"
+Response: {{"tokens_per_day": 10000000, "pattern": "business_hours", "model_key": "mistral_7b", "latency_requirement_ms": 200}}
+
+Now parse this:
+{user_text}
+"""
+        text = self._generate_text("Return JSON only.", parser_prompt)
+        try:
+            return self._extract_json_object(text)
+        except RuntimeError:
+            retry_text = self._generate_text(
+                "Return valid JSON only.",
+                parser_prompt + "\n\nReturn valid JSON only.",
+            )
+            return self._extract_json_object(retry_text)
 
     def explain(self, recommendation_summary: str, workload: WorkloadSpec) -> str:
-        prompt = (
-            "Explain the deterministic recommendation in 4-6 concise bullet points. "
-            "Do not fabricate metrics. Use these inputs and summary.\n\n"
-            f"Workload: {workload}\n"
-            f"Summary:\n{recommendation_summary}"
-        )
+        explain_prompt = f"""You are an expert in LLM deployment cost optimization.
+
+Given this workload:
+- Tokens/day: {workload.tokens_per_day:,}
+- Traffic pattern: {workload.pattern}
+- Model: {workload.model_key}
+- Latency requirement: {workload.latency_requirement_ms or "None"}
+
+And this recommendation:
+{recommendation_summary}
+
+Explain in 2-3 sentences:
+1. Why this option is cost-effective for this workload
+2. Key trade-offs (utilization vs idle waste vs latency)
+3. When to consider alternatives
+
+Be technical but concise. Focus on actionable insights.
+"""
         return self._generate_text(
-            "You are an infra assistant. Keep explanations precise and grounded.", prompt
+            "Be concise and technical. Do not fabricate metrics.",
+            explain_prompt,
         )

@@ -1,30 +1,25 @@
-"""Opus 4.6 adapter using the Anthropic Messages API."""
+"""Opus adapter using the Anthropic API."""
 
 from __future__ import annotations
 
 import json
 import os
-import time
 from typing import Any, Optional
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+
+try:
+    import anthropic
+except ImportError:  # pragma: no cover - handled at runtime
+    anthropic = None  # type: ignore[assignment]
 
 from inference_atlas.llm.base import LLMAdapter
 from inference_atlas.llm.schema import WorkloadSpec
 
-ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
-DEFAULT_MODEL = "claude-opus-4-6"
-RETRYABLE_STATUS_CODES = {408, 429, 500, 502, 503, 504}
-
-PARSE_SYSTEM_PROMPT = (
-    "Extract workload fields from user text. Return only valid JSON object with keys: "
-    "tokens_per_day (number), pattern (steady|business_hours|bursty), model_key (string), "
-    "latency_requirement_ms (number or null)."
-)
+PRIMARY_MODEL = "claude-opus-4-6-20250514"
+FALLBACK_MODEL = "claude-opus-4-20250514"
 
 
 class Opus46Adapter(LLMAdapter):
-    """Opus 4.6 adapter implementation."""
+    """Anthropic-backed adapter for parsing workloads and explanations."""
 
     provider_name = "opus_4_6"
 
@@ -33,71 +28,60 @@ class Opus46Adapter(LLMAdapter):
         api_key: Optional[str] = None,
         model: Optional[str] = None,
         timeout_sec: int = 30,
-        max_retries: int = 2,
-        backoff_base_sec: float = 0.5,
+        client: Any = None,
+        base_url: Optional[str] = None,
     ) -> None:
         self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY", "")
-        self.model = model or os.getenv("ANTHROPIC_MODEL", DEFAULT_MODEL)
+        self.model = model or os.getenv("ANTHROPIC_MODEL", PRIMARY_MODEL)
         self.timeout_sec = timeout_sec
-        self.max_retries = max_retries
-        self.backoff_base_sec = backoff_base_sec
+        self.base_url = base_url or os.getenv("ANTHROPIC_BASE_URL")
         if self.timeout_sec <= 0:
             raise ValueError("timeout_sec must be > 0.")
-        if self.max_retries < 0:
-            raise ValueError("max_retries must be >= 0.")
-        if self.backoff_base_sec < 0:
-            raise ValueError("backoff_base_sec must be >= 0.")
+        self._ensure_api_key()
+        if client is not None:
+            self.client = client
+        else:
+            if anthropic is None:
+                raise RuntimeError(
+                    "anthropic package is not installed. Install with: pip install anthropic>=0.40.0"
+                )
+            if self.base_url:
+                self.client = anthropic.Anthropic(api_key=self.api_key, base_url=self.base_url)
+            else:
+                self.client = anthropic.Anthropic(api_key=self.api_key)
+        self._model_candidates = [self.model]
+        if self.model != FALLBACK_MODEL:
+            self._model_candidates.append(FALLBACK_MODEL)
 
     def _ensure_api_key(self) -> None:
         if not self.api_key:
-            raise RuntimeError("ANTHROPIC_API_KEY is not configured.")
+            raise ValueError("ANTHROPIC_API_KEY not set")
 
-    def _generate_text(self, system_prompt: str, user_prompt: str) -> str:
-        """Send a prompt to the Anthropic Messages API and return text output."""
-        self._ensure_api_key()
-        body = {
-            "model": self.model,
-            "max_tokens": 500,
-            "system": system_prompt,
-            "messages": [{"role": "user", "content": user_prompt}],
-        }
-        request = Request(
-            ANTHROPIC_API_URL,
-            data=json.dumps(body).encode("utf-8"),
-            headers={
-                "x-api-key": self.api_key,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json",
-            },
-            method="POST",
+    def _messages_text(self, system_prompt: str, user_prompt: str, model: str) -> str:
+        response = self.client.messages.create(
+            model=model,
+            system=system_prompt,
+            max_tokens=600,
+            messages=[{"role": "user", "content": user_prompt}],
+            timeout=self.timeout_sec,
         )
-        payload: dict[str, Any]
-        for attempt in range(self.max_retries + 1):
-            try:
-                with urlopen(request, timeout=self.timeout_sec) as response:
-                    payload = json.loads(response.read().decode("utf-8"))
-                break
-            except HTTPError as exc:
-                status_code = getattr(exc, "code", None)
-                is_retryable = status_code in RETRYABLE_STATUS_CODES
-                if is_retryable and attempt < self.max_retries:
-                    time.sleep(self.backoff_base_sec * (2**attempt))
-                    continue
-                raise RuntimeError(
-                    f"Anthropic request failed with status {status_code}."
-                ) from exc
-            except URLError as exc:
-                if attempt < self.max_retries:
-                    time.sleep(self.backoff_base_sec * (2**attempt))
-                    continue
-                raise RuntimeError("Anthropic connection failed.") from exc
-
-        content = payload.get("content", [])
-        for item in content:
-            text = item.get("text")
+        for item in getattr(response, "content", []):
+            text = getattr(item, "text", None)
             if isinstance(text, str) and text.strip():
                 return text.strip()
         raise RuntimeError("Anthropic response did not contain text output.")
+
+    def _generate_text(self, system_prompt: str, user_prompt: str) -> str:
+        last_error: Optional[Exception] = None
+        for model_name in self._model_candidates:
+            try:
+                return self._messages_text(system_prompt, user_prompt, model_name)
+            except Exception as exc:  # noqa: BLE001
+                if anthropic is not None and isinstance(exc, anthropic.RateLimitError):
+                    raise RuntimeError("Anthropic rate limit exceeded. Please retry shortly.") from exc
+                last_error = exc
+                continue
+        raise RuntimeError(f"Anthropic request failed: {last_error}")
 
     @staticmethod
     def _extract_json_object(text: str) -> dict[str, Any]:
@@ -120,16 +104,56 @@ class Opus46Adapter(LLMAdapter):
         raise RuntimeError("Opus parse response was not valid JSON object.")
 
     def parse_workload(self, user_text: str) -> dict[str, Any]:
-        text = self._generate_text(PARSE_SYSTEM_PROMPT, user_text)
-        return self._extract_json_object(text)
+        parser_prompt = f"""You are a workload parser for LLM deployment cost analysis.
+
+Extract these fields from the user's description:
+- tokens_per_day (float): Total tokens per day
+- pattern (string): Traffic pattern - must be one of: "steady", "business_hours", "bursty"
+- model_key (string): Model identifier - must be one of: "llama_8b", "llama_70b", "llama_405b", "mixtral_8x7b", "mistral_7b"
+- latency_requirement_ms (float, optional): Max latency in milliseconds, or null/omit if not specified
+
+Return ONLY valid JSON with these exact keys.
+
+Examples:
+User: "Chat app with 1000 daily active users, steady traffic, Llama 70B"
+Response: {{"tokens_per_day": 5000000, "pattern": "steady", "model_key": "llama_70b", "latency_requirement_ms": null}}
+
+User: "API serving 10M tokens/day during business hours, need <200ms P99, using Mistral 7B"
+Response: {{"tokens_per_day": 10000000, "pattern": "business_hours", "model_key": "mistral_7b", "latency_requirement_ms": 200}}
+
+Now parse this:
+{user_text}
+"""
+        text = self._generate_text("Return JSON only.", parser_prompt)
+        try:
+            return self._extract_json_object(text)
+        except RuntimeError:
+            retry_text = self._generate_text(
+                "Return valid JSON only.",
+                parser_prompt + "\n\nReturn valid JSON only.",
+            )
+            return self._extract_json_object(retry_text)
 
     def explain(self, recommendation_summary: str, workload: WorkloadSpec) -> str:
-        prompt = (
-            "Explain the deterministic recommendation in 4-6 concise bullet points. "
-            "Do not fabricate metrics. Use these inputs and summary.\n\n"
-            f"Workload: {workload}\n"
-            f"Summary:\n{recommendation_summary}"
-        )
+        explain_prompt = f"""You are an expert in LLM deployment cost optimization.
+
+Given this workload:
+- Tokens/day: {workload.tokens_per_day:,}
+- Traffic pattern: {workload.pattern}
+- Model: {workload.model_key}
+- Latency requirement: {workload.latency_requirement_ms or "None"}
+
+And this recommendation:
+{recommendation_summary}
+
+Explain in 2-3 sentences:
+1. Why this option is cost-effective for this workload
+2. Key trade-offs (utilization vs idle waste vs latency)
+3. When to consider alternatives
+
+Be technical but concise. Focus on actionable insights.
+"""
         return self._generate_text(
-            "You are an infra assistant. Keep explanations precise and grounded.", prompt
+            "Be concise and technical. Do not fabricate metrics.",
+            explain_prompt,
         )
