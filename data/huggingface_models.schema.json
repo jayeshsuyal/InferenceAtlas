@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://inference-atlas.local/schemas/huggingface_models.schema.json",
+  "title": "InferenceAtlas Hugging Face Model Catalog",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "source",
+    "generated_at_utc",
+    "model_count",
+    "models"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source": {
+      "type": "string",
+      "const": "huggingface_api"
+    },
+    "generated_at_utc": {
+      "type": "string",
+      "minLength": 1
+    },
+    "model_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "models": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "model_id",
+          "pipeline_tag",
+          "downloads",
+          "likes",
+          "license",
+          "context_length",
+          "size_bucket",
+          "private",
+          "gated",
+          "tags",
+          "last_modified",
+          "source_url",
+          "confidence"
+        ],
+        "properties": {
+          "model_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "pipeline_tag": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "downloads": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "likes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "license": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "context_length": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1
+          },
+          "size_bucket": {
+            "type": "string",
+            "enum": [
+              "7b",
+              "13b",
+              "34b",
+              "70b",
+              "405b",
+              "other"
+            ]
+          },
+          "private": {
+            "type": "boolean"
+          },
+          "gated": {
+            "type": "boolean"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "last_modified": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source_url": {
+            "type": "string",
+            "minLength": 1
+          },
+          "confidence": {
+            "type": "string",
+            "enum": [
+              "vendor_listed"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

@@ -6,7 +6,12 @@ import os
 
 import streamlit as st
 
-from inference_atlas import get_mvp_catalog, get_recommendations, rank_configs
+from inference_atlas import (
+    get_huggingface_models,
+    get_mvp_catalog,
+    get_recommendations,
+    rank_configs,
+)
 from inference_atlas.data_loader import get_models
 from inference_atlas.llm import LLMRouter, WorkloadSpec
 
@@ -136,6 +141,27 @@ with st.form("inputs"):
             "Open-source route: OSS-friendly and hostable provider set."
         ),
     )
+    hf_models = []
+    hf_model_choice = None
+    if planning_lane == "Open-source route":
+        hf_models = get_huggingface_models(min_downloads=1000, include_gated=False)
+        if hf_models:
+            hf_model_labels = [
+                f"{m['model_id']} (downloads: {m['downloads']:,}, bucket: {m['size_bucket']})"
+                for m in hf_models[:100]
+            ]
+            hf_index_by_label = {label: hf_models[idx] for idx, label in enumerate(hf_model_labels)}
+            hf_label = st.selectbox(
+                "Open-source model (Hugging Face)",
+                options=hf_model_labels,
+                help="Top Hugging Face models fetched via API and filtered for open-source lane.",
+            )
+            hf_model_choice = hf_index_by_label[hf_label]
+        else:
+            st.caption(
+                "No local Hugging Face models found. Run `python3 scripts/sync_huggingface_catalog.py` "
+                "to fetch models via API."
+            )
     use_legacy_engine = st.toggle(
         "Use legacy engine",
         value=False,
@@ -145,11 +171,17 @@ with st.form("inputs"):
     submit = st.form_submit_button("Get Recommendations")
 
 if submit:
+    selected_model_key = model_key
+    selected_model_bucket = _model_key_to_bucket(model_key)
+    if planning_lane == "Open-source route" and hf_model_choice is not None:
+        selected_model_key = str(hf_model_choice["model_id"])
+        selected_model_bucket = str(hf_model_choice["size_bucket"])
+
     latency = latency_requirement_ms if latency_requirement_ms > 0 else None
     effective_workload = WorkloadSpec(
         tokens_per_day=float(tokens_per_day),
         pattern=label_to_pattern[pattern_label],
-        model_key=model_key,
+        model_key=selected_model_key,
         latency_requirement_ms=latency,
     )
     st.session_state["last_workload"] = effective_workload
@@ -159,7 +191,7 @@ if submit:
             recommendations = get_recommendations(
                 tokens_per_day=effective_workload.tokens_per_day,
                 pattern=effective_workload.pattern,
-                model_key=effective_workload.model_key,
+                model_key=model_key,
                 latency_requirement_ms=effective_workload.latency_requirement_ms,
                 top_k=3,
             )
@@ -175,7 +207,7 @@ if submit:
             lane_provider_ids = _provider_ids_for_lane(planning_lane)
             ranked_plans = rank_configs(
                 tokens_per_day=effective_workload.tokens_per_day,
-                model_bucket=_model_key_to_bucket(effective_workload.model_key),
+                model_bucket=selected_model_bucket,
                 peak_to_avg=pattern_to_peak_to_avg[effective_workload.pattern],
                 top_k=3,
                 provider_ids=lane_provider_ids,

@@ -50,6 +50,9 @@ MVP_CATALOG_SCHEMA_FILES = {
     "capacity_table": _project_root / "data" / "capacity_table.schema.json",
 }
 
+HUGGINGFACE_CATALOG_FILE = _project_root / "data" / "huggingface_models.json"
+HUGGINGFACE_SCHEMA_FILE = _project_root / "data" / "huggingface_models.schema.json"
+
 REQUIRED_COLUMNS = {
     "workload_type",
     "provider",
@@ -118,6 +121,7 @@ class PricingRecord:
 _pricing_records_cache: list[PricingRecord] | None = None
 _mvp_catalog_validation_summary_cache: dict[str, int] | None = None
 _mvp_catalog_data_cache: dict[str, dict[str, Any]] | None = None
+_huggingface_models_cache: list[dict[str, Any]] | None = None
 
 
 def _parse_optional_float(value: str, field_name: str, source: Path, row_num: int) -> float | None:
@@ -326,6 +330,57 @@ def get_mvp_catalog(catalog_name: str) -> dict[str, Any]:
         valid = ", ".join(sorted(_mvp_catalog_data_cache))
         raise KeyError(f"Unknown catalog '{catalog_name}'. Valid options: {valid}")
     return deepcopy(_mvp_catalog_data_cache[catalog_name])
+
+
+def validate_huggingface_catalog(force: bool = False) -> int:
+    """Validate local Hugging Face catalog JSON against schema."""
+    global _huggingface_models_cache
+    if _huggingface_models_cache is not None and not force:
+        return len(_huggingface_models_cache)
+
+    try:
+        from jsonschema import Draft202012Validator
+    except ImportError as exc:
+        raise RuntimeError(
+            "The 'jsonschema' package is required for Hugging Face catalog validation."
+        ) from exc
+
+    schema = _load_json(HUGGINGFACE_SCHEMA_FILE)
+    data = _load_json(HUGGINGFACE_CATALOG_FILE)
+    validator = Draft202012Validator(schema)
+    errors = sorted(validator.iter_errors(data), key=lambda e: list(e.path))
+    if errors:
+        first = errors[0]
+        location = ".".join(str(token) for token in first.path) or "<root>"
+        raise ValueError(
+            f"{HUGGINGFACE_CATALOG_FILE} failed schema validation at {location}: "
+            f"{first.message}"
+        )
+
+    models = data.get("models", [])
+    if not isinstance(models, list):
+        raise ValueError(f"{HUGGINGFACE_CATALOG_FILE} models must be a list")
+    _huggingface_models_cache = models
+    return len(_huggingface_models_cache)
+
+
+def get_huggingface_models(
+    min_downloads: int = 0,
+    include_gated: bool = False,
+) -> list[dict[str, Any]]:
+    """Get schema-validated Hugging Face models for open-source lane."""
+    if min_downloads < 0:
+        raise ValueError("min_downloads must be >= 0")
+    validate_huggingface_catalog()
+    assert _huggingface_models_cache is not None
+    models = [
+        row
+        for row in _huggingface_models_cache
+        if int(row.get("downloads", 0)) >= min_downloads
+        and (include_gated or not bool(row.get("gated", False)))
+    ]
+    models.sort(key=lambda row: int(row.get("downloads", 0)), reverse=True)
+    return deepcopy(models)
 
 
 def get_pricing_records(workload_type: WorkloadType | str | None = None) -> list[PricingRecord]:
