@@ -204,21 +204,22 @@ Open [http://localhost:8501](http://localhost:8501) in your browser.
 ### Python API
 
 ```python
-from inference_atlas import get_recommendations
+from inference_atlas import rank_configs
 
-recommendations = get_recommendations(
+plans = rank_configs(
     tokens_per_day=5_000_000,
-    pattern="bursty",
-    model_key="llama_70b",
-    latency_requirement_ms=None,
+    model_bucket="70b",
+    peak_to_avg=3.0,
     top_k=3,
 )
 
-for rec in recommendations:
-    print(f"{rec.rank}. {rec.platform} - {rec.option}")
-    print(f"   Monthly cost: ${rec.monthly_cost_usd:,.0f}")
-    print(f"   Utilization: {rec.utilization_pct:.0f}%")
+for plan in plans:
+    print(f"{plan.rank}. {plan.provider_name} - {plan.offering_id}")
+    print(f"   Monthly cost: ${plan.monthly_cost_usd:,.0f}")
+    print(f"   Risk score: {plan.risk.total_risk:.2f}")
 ```
+
+Legacy API note: `get_recommendations(...)` is deprecated and retained only for backward compatibility.
 
 ### Batch Example Runner
 

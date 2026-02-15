@@ -58,6 +58,27 @@ label_to_pattern = {
     "Business Hours": "business_hours",
     "Bursty": "bursty",
 }
+pattern_to_peak_to_avg = {
+    "steady": 1.5,
+    "business_hours": 2.5,
+    "bursty": 3.5,
+}
+
+
+def _model_key_to_bucket(model_key: str) -> str:
+    model = MODEL_REQUIREMENTS.get(model_key)
+    if not model:
+        return "70b"
+    param_count = int(model["parameter_count"])
+    if param_count <= 9_000_000_000:
+        return "7b"
+    if param_count <= 20_000_000_000:
+        return "13b"
+    if param_count <= 50_000_000_000:
+        return "34b"
+    if param_count <= 120_000_000_000:
+        return "70b"
+    return "405b"
 
 with st.form("inputs"):
     model_items = list(MODEL_REQUIREMENTS.items())
@@ -98,6 +119,11 @@ with st.form("inputs"):
         step=10.0,
         help="Set to 0 to ignore latency constraint. <300ms triggers strict latency penalties.",
     )
+    use_legacy_engine = st.toggle(
+        "Use legacy engine",
+        value=False,
+        help="Off (default): rank_configs() MVP planner. On: deprecated get_recommendations().",
+    )
 
     submit = st.form_submit_button("Get Recommendations")
 
@@ -111,23 +137,46 @@ if submit:
     )
     st.session_state["last_workload"] = effective_workload
 
-    try:
-        recommendations = get_recommendations(
-            tokens_per_day=effective_workload.tokens_per_day,
-            pattern=effective_workload.pattern,
-            model_key=effective_workload.model_key,
-            latency_requirement_ms=effective_workload.latency_requirement_ms,
-            top_k=3,
-        )
-    except ValueError as exc:
-        st.error(str(exc))
-        recommendations = []
-    st.session_state["last_recommendations"] = recommendations
+    if use_legacy_engine:
+        try:
+            recommendations = get_recommendations(
+                tokens_per_day=effective_workload.tokens_per_day,
+                pattern=effective_workload.pattern,
+                model_key=effective_workload.model_key,
+                latency_requirement_ms=effective_workload.latency_requirement_ms,
+                top_k=3,
+            )
+        except ValueError as exc:
+            st.error(str(exc))
+            recommendations = []
+        st.session_state["last_recommendations"] = recommendations
+        st.session_state["last_ranked_plans"] = []
+        st.session_state["last_engine"] = "legacy"
+    else:
+        try:
+            ranked_plans = rank_configs(
+                tokens_per_day=effective_workload.tokens_per_day,
+                model_bucket=_model_key_to_bucket(effective_workload.model_key),
+                peak_to_avg=pattern_to_peak_to_avg[effective_workload.pattern],
+                top_k=3,
+            )
+            if effective_workload.latency_requirement_ms is not None:
+                st.caption(
+                    "Note: MVP planner ranking does not currently apply latency-specific penalties."
+                )
+        except ValueError as exc:
+            st.error(str(exc))
+            ranked_plans = []
+        st.session_state["last_ranked_plans"] = ranked_plans
+        st.session_state["last_recommendations"] = []
+        st.session_state["last_engine"] = "mvp"
 
 last_recommendations = st.session_state.get("last_recommendations", [])
+last_ranked_plans = st.session_state.get("last_ranked_plans", [])
+last_engine = st.session_state.get("last_engine")
 last_workload = st.session_state.get("last_workload")
-if last_recommendations:
-    st.subheader("Top 3 Recommendations")
+if last_engine == "legacy" and last_recommendations:
+    st.subheader("Top 3 Recommendations (Legacy)")
     for rec in last_recommendations:
         with st.container():
             col1, col2 = st.columns([3, 1])
@@ -172,6 +221,52 @@ if last_recommendations:
                     f"{top_rec.platform} - {top_rec.option}, "
                     f"${top_rec.monthly_cost_usd:.0f}/mo, "
                     f"{top_rec.utilization_pct:.0f}% util"
+                )
+                explanation = router.explain(summary, last_workload)
+                st.session_state["last_explanation"] = explanation
+                st.info(explanation)
+            except Exception as exc:  # noqa: BLE001 - user-facing parser message
+                st.error(f"Explanation failed: {exc}")
+    if st.session_state.get("last_explanation"):
+        st.info(st.session_state["last_explanation"])
+elif last_engine == "mvp" and last_ranked_plans:
+    st.subheader("Top 3 Recommendations (MVP Planner Default)")
+    for plan in last_ranked_plans:
+        with st.container():
+            col1, col2 = st.columns([3, 1])
+
+            with col1:
+                st.markdown(f"### {plan.rank}. {plan.provider_name} - {plan.offering_id}")
+                st.caption(plan.why)
+
+            with col2:
+                st.metric("Monthly Cost", f"${plan.monthly_cost_usd:,.0f}")
+                st.metric("Score", f"{plan.score:,.1f}")
+
+            if plan.utilization_at_peak is not None:
+                util_ratio = min(max(plan.utilization_at_peak, 0.0), 1.0)
+                st.progress(util_ratio)
+                st.caption(f"Peak utilization: {plan.utilization_at_peak * 100:.0f}%")
+            st.caption(
+                f"Risk: overload={plan.risk.risk_overload:.2f}, "
+                f"complexity={plan.risk.risk_complexity:.2f}, total={plan.risk.total_risk:.2f}"
+            )
+            st.markdown("---")
+
+    explain_disabled = (not has_llm_key) or (last_workload is None)
+    if st.button("Explain this recommendation", disabled=explain_disabled, key="explain_mvp_default"):
+        if not has_llm_key:
+            st.error("Set OPENAI_API_KEY or ANTHROPIC_API_KEY to use AI explanations.")
+        elif last_workload is None:
+            st.error("Run recommendations first to generate an explanation.")
+        else:
+            try:
+                router = LLMRouter()
+                top_plan = last_ranked_plans[0]
+                summary = (
+                    f"{top_plan.provider_name} - {top_plan.offering_id}, "
+                    f"${top_plan.monthly_cost_usd:.0f}/mo, "
+                    f"risk={top_plan.risk.total_risk:.2f}"
                 )
                 explanation = router.explain(summary, last_workload)
                 st.session_state["last_explanation"] = explanation

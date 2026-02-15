@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Optional
+import warnings
 
 from inference_atlas.config import MAX_GPUS
 from inference_atlas.cost_model import (
@@ -113,6 +114,13 @@ def get_recommendations(
     Raises:
         ValueError: If no platforms can handle the workload
     """
+    warnings.warn(
+        "get_recommendations() is deprecated and will be removed in a future release. "
+        "Use rank_configs() from inference_atlas.mvp_planner as the primary API.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+
     platforms = get_platforms()
     candidates: list[tuple[float, str, str, CostBreakdown, str, float]] = []
     strict_latency_required = (
