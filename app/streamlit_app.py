@@ -63,6 +63,7 @@ pattern_to_peak_to_avg = {
     "business_hours": 2.5,
     "bursty": 3.5,
 }
+MANAGED_PROVIDER_IDS = {"openai", "anthropic", "cohere"}
 
 
 def _model_key_to_bucket(model_key: str) -> str:
@@ -79,6 +80,13 @@ def _model_key_to_bucket(model_key: str) -> str:
     if param_count <= 120_000_000_000:
         return "70b"
     return "405b"
+
+
+def _provider_ids_for_lane(lane: str) -> set[str]:
+    providers = {row["provider_id"] for row in get_mvp_catalog("providers")["providers"]}
+    if lane == "Managed providers":
+        return providers.intersection(MANAGED_PROVIDER_IDS)
+    return providers.difference(MANAGED_PROVIDER_IDS)
 
 with st.form("inputs"):
     model_items = list(MODEL_REQUIREMENTS.items())
@@ -119,6 +127,15 @@ with st.form("inputs"):
         step=10.0,
         help="Set to 0 to ignore latency constraint. <300ms triggers strict latency penalties.",
     )
+    planning_lane = st.radio(
+        "Planning lane",
+        options=["Managed providers", "Open-source route"],
+        index=0,
+        help=(
+            "Managed providers: closed-model API providers. "
+            "Open-source route: OSS-friendly and hostable provider set."
+        ),
+    )
     use_legacy_engine = st.toggle(
         "Use legacy engine",
         value=False,
@@ -152,13 +169,16 @@ if submit:
         st.session_state["last_recommendations"] = recommendations
         st.session_state["last_ranked_plans"] = []
         st.session_state["last_engine"] = "legacy"
+        st.session_state["last_lane"] = None
     else:
         try:
+            lane_provider_ids = _provider_ids_for_lane(planning_lane)
             ranked_plans = rank_configs(
                 tokens_per_day=effective_workload.tokens_per_day,
                 model_bucket=_model_key_to_bucket(effective_workload.model_key),
                 peak_to_avg=pattern_to_peak_to_avg[effective_workload.pattern],
                 top_k=3,
+                provider_ids=lane_provider_ids,
             )
             if effective_workload.latency_requirement_ms is not None:
                 st.caption(
@@ -170,6 +190,7 @@ if submit:
         st.session_state["last_ranked_plans"] = ranked_plans
         st.session_state["last_recommendations"] = []
         st.session_state["last_engine"] = "mvp"
+        st.session_state["last_lane"] = planning_lane
 
 last_recommendations = st.session_state.get("last_recommendations", [])
 last_ranked_plans = st.session_state.get("last_ranked_plans", [])
@@ -230,6 +251,8 @@ if last_engine == "legacy" and last_recommendations:
     if st.session_state.get("last_explanation"):
         st.info(st.session_state["last_explanation"])
 elif last_engine == "mvp" and last_ranked_plans:
+    if st.session_state.get("last_lane"):
+        st.caption(f"Lane: {st.session_state['last_lane']}")
     st.subheader("Top 3 Recommendations (MVP Planner Default)")
     for plan in last_ranked_plans:
         with st.container():

@@ -225,6 +225,17 @@ def enumerate_configs(model_bucket: str) -> list[PlannerConfig]:
     return configs
 
 
+def enumerate_configs_for_providers(
+    model_bucket: str,
+    provider_ids: set[str] | None = None,
+) -> list[PlannerConfig]:
+    """Enumerate configurations for an optional subset of providers."""
+    configs = enumerate_configs(model_bucket=model_bucket)
+    if provider_ids is None:
+        return configs
+    return [cfg for cfg in configs if cfg.provider_id in provider_ids]
+
+
 def _is_feasible(
     cfg: PlannerConfig,
     workload: NormalizedWorkload,
@@ -310,6 +321,7 @@ def rank_configs(
     alpha: float = DEFAULT_ALPHA,
     autoscale_inefficiency: float = DEFAULT_AUTOSCALE_INEFFICIENCY,
     top_k: int = 10,
+    provider_ids: set[str] | None = None,
 ) -> list[RankedPlan]:
     """Run full MVP ranking pipeline and return top-k plans."""
     if top_k < 1:
@@ -322,7 +334,10 @@ def rank_configs(
     )
 
     entries = get_mvp_catalog("capacity_table")["entries"]
-    all_configs = enumerate_configs(model_bucket=model_bucket)
+    all_configs = enumerate_configs_for_providers(
+        model_bucket=model_bucket,
+        provider_ids=provider_ids,
+    )
     candidates: list[RankedPlan] = []
 
     for cfg in all_configs:

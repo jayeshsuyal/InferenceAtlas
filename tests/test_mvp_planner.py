@@ -8,6 +8,7 @@ from inference_atlas.mvp_planner import (
     capacity,
     compute_monthly_cost,
     enumerate_configs,
+    enumerate_configs_for_providers,
     normalize_workload,
     rank_configs,
     risk_score,
@@ -101,6 +102,15 @@ def test_enumerate_configs_has_matches() -> None:
     rows = enumerate_configs(model_bucket="70b")
     assert rows
     assert any(row.billing_mode in {"dedicated_hourly", "autoscale_hourly"} for row in rows)
+
+
+def test_enumerate_configs_provider_subset_filters() -> None:
+    rows = enumerate_configs_for_providers(
+        model_bucket="70b",
+        provider_ids={"baseten", "together_ai"},
+    )
+    assert rows
+    assert all(row.provider_id in {"baseten", "together_ai"} for row in rows)
 
 
 def test_rank_configs_returns_sorted_results() -> None:
