@@ -1,0 +1,449 @@
+{
+  "schema_version": "1.0.0",
+  "models": [
+    {
+      "model_id": "a10",
+      "model_name": "A10",
+      "family": "a10",
+      "size_bucket": "13b",
+      "default_context_len": 8192,
+      "multiplier_knobs": {
+        "quantization_factor": 1.0,
+        "long_context_penalty": 1.0
+      },
+      "notes": "Generated from pricing dataset; size_bucket inferred heuristically."
+    },
+    {
+      "model_id": "a100",
+      "model_name": "A100",
+      "family": "a100",
+      "size_bucket": "70b",
+      "default_context_len": 8192,
+      "multiplier_knobs": {
+        "quantization_factor": 1.0,
+        "long_context_penalty": 1.0
+      },
+      "notes": "Generated from pricing dataset; size_bucket inferred heuristically."
+    },
+    {
+      "model_id": "a100_40gb",
+      "model_name": "A100 40Gb",
+      "family": "a100",
+      "size_bucket": "70b",
+      "default_context_len": 8192,
+      "multiplier_knobs": {
+        "quantization_factor": 1.0,
+        "long_context_penalty": 1.0
+      },
+      "notes": "Generated from pricing dataset; size_bucket inferred heuristically."
+    },
+    {
+      "model_id": "a100_80gb",
+      "model_name": "A100 80Gb",
+      "family": "a100",
+      "size_bucket": "70b",
+      "default_context_len": 8192,
+      "multiplier_knobs": {
+        "quantization_factor": 1.0,
+        "long_context_penalty": 1.0
+      },
+      "notes": "Generated from pricing dataset; size_bucket inferred heuristically."
+    },
+    {
+      "model_id": "a100_sxm_80gb",
+      "model_name": "A100 Sxm 80Gb",
+      "family": "a100",
+      "size_bucket": "70b",
+      "default_context_len": 8192,
+      "multiplier_knobs": {
+        "quantization_factor": 1.0,
+        "long_context_penalty": 1.0
+      },
+      "notes": "Generated from pricing dataset; size_bucket inferred heuristically."
+    },
+    {
+      "model_id": "bucket_13b",
+      "model_name": "Generic 13B Bucket",
+      "family": "generic",
+      "size_bucket": "13b",
+      "default_context_len": 8192,
+      "multiplier_knobs": {
+        "quantization_factor": 1.0,
+        "long_context_penalty": 1.0
+      },
+      "notes": "Synthetic bucket model for capacity planning."
+    },
+    {
+      "model_id": "bucket_34b",
+      "model_name": "Generic 34B Bucket",
+      "family": "generic",
+      "size_bucket": "34b",
+      "default_context_len": 8192,
+      "multiplier_knobs": {
+        "quantization_factor": 1.0,
+        "long_context_penalty": 1.0
+      },
+      "notes": "Synthetic bucket model for capacity planning."
+    },
+    {
+      "model_id": "bucket_405b",
+      "model_name": "Generic 405B Bucket",
+      "family": "generic",
+      "size_bucket": "405b",
+      "default_context_len": 8192,
+      "multiplier_knobs": {
+        "quantization_factor": 1.0,
+        "long_context_penalty": 1.0
+      },
+      "notes": "Synthetic bucket model for capacity planning."
+    },
+    {
+      "model_id": "bucket_70b",
+      "model_name": "Generic 70B Bucket",
+      "family": "generic",
+      "size_bucket": "70b",
+      "default_context_len": 8192,
+      "multiplier_knobs": {
+        "quantization_factor": 1.0,
+        "long_context_penalty": 1.0
+      },
+      "notes": "Synthetic bucket model for capacity planning."
+    },
+    {
+      "model_id": "bucket_7b",
+      "model_name": "Generic 7B Bucket",
+      "family": "generic",
+      "size_bucket": "7b",
+      "default_context_len": 8192,
+      "multiplier_knobs": {
+        "quantization_factor": 1.0,
+        "long_context_penalty": 1.0
+      },
+      "notes": "Synthetic bucket model for capacity planning."
+    },
+    {
+      "model_id": "claude_haiku_4_5",
+      "model_name": "Claude Haiku 4 5",
+      "family": "claude",
+      "size_bucket": "7b",
+      "default_context_len": 8192,
+      "multiplier_knobs": {
+        "quantization_factor": 1.0,
+        "long_context_penalty": 1.0
+      },
+      "notes": "Generated from pricing dataset; size_bucket inferred heuristically."
+    },
+    {
+      "model_id": "claude_opus_4_5",
+      "model_name": "Claude Opus 4 5",
+      "family": "claude",
+      "size_bucket": "7b",
+      "default_context_len": 8192,
+      "multiplier_knobs": {
+        "quantization_factor": 1.0,
+        "long_context_penalty": 1.0
+      },
+      "notes": "Generated from pricing dataset; size_bucket inferred heuristically."
+    },
+    {
+      "model_id": "claude_sonnet_4_5",
+      "model_name": "Claude Sonnet 4 5",
+      "family": "claude",
+      "size_bucket": "7b",
+      "default_context_len": 8192,
+      "multiplier_knobs": {
+        "quantization_factor": 1.0,
+        "long_context_penalty": 1.0
+      },
+      "notes": "Generated from pricing dataset; size_bucket inferred heuristically."
+    },
+    {
+      "model_id": "command_a",
+      "model_name": "Command A",
+      "family": "command",
+      "size_bucket": "other",
+      "default_context_len": 8192,
+      "multiplier_knobs": {
+        "quantization_factor": 1.0,
+        "long_context_penalty": 1.0
+      },
+      "notes": "Generated from pricing dataset; size_bucket inferred heuristically."
+    },
+    {
+      "model_id": "command_r",
+      "model_name": "Command R",
+      "family": "command",
+      "size_bucket": "other",
+      "default_context_len": 8192,
+      "multiplier_knobs": {
+        "quantization_factor": 1.0,
+        "long_context_penalty": 1.0
+      },
+      "notes": "Generated from pricing dataset; size_bucket inferred heuristically."
+    },
+    {
+      "model_id": "deepseek_r1",
+      "model_name": "Deepseek R1",
+      "family": "deepseek",
+      "size_bucket": "7b",
+      "default_context_len": 8192,
+      "multiplier_knobs": {
+        "quantization_factor": 1.0,
+        "long_context_penalty": 1.0
+      },
+      "notes": "Generated from pricing dataset; size_bucket inferred heuristically."
+    },
+    {
+      "model_id": "deepseek_v3",
+      "model_name": "Deepseek V3",
+      "family": "deepseek",
+      "size_bucket": "7b",
+      "default_context_len": 8192,
+      "multiplier_knobs": {
+        "quantization_factor": 1.0,
+        "long_context_penalty": 1.0
+      },
+      "notes": "Generated from pricing dataset; size_bucket inferred heuristically."
+    },
+    {
+      "model_id": "deepseek_v3_1",
+      "model_name": "Deepseek V3 1",
+      "family": "deepseek",
+      "size_bucket": "7b",
+      "default_context_len": 8192,
+      "multiplier_knobs": {
+        "quantization_factor": 1.0,
+        "long_context_penalty": 1.0
+      },
+      "notes": "Generated from pricing dataset; size_bucket inferred heuristically."
+    },
+    {
+      "model_id": "glm_4_7",
+      "model_name": "Glm 4 7",
+      "family": "glm",
+      "size_bucket": "7b",
+      "default_context_len": 8192,
+      "multiplier_knobs": {
+        "quantization_factor": 1.0,
+        "long_context_penalty": 1.0
+      },
+      "notes": "Generated from pricing dataset; size_bucket inferred heuristically."
+    },
+    {
+      "model_id": "glm_5",
+      "model_name": "Glm 5",
+      "family": "glm",
+      "size_bucket": "7b",
+      "default_context_len": 8192,
+      "multiplier_knobs": {
+        "quantization_factor": 1.0,
+        "long_context_penalty": 1.0
+      },
+      "notes": "Generated from pricing dataset; size_bucket inferred heuristically."
+    },
+    {
+      "model_id": "gpt_4o",
+      "model_name": "Gpt 4O",
+      "family": "gpt",
+      "size_bucket": "7b",
+      "default_context_len": 8192,
+      "multiplier_knobs": {
+        "quantization_factor": 1.0,
+        "long_context_penalty": 1.0
+      },
+      "notes": "Generated from pricing dataset; size_bucket inferred heuristically."
+    },
+    {
+      "model_id": "gpt_4o_mini",
+      "model_name": "Gpt 4O Mini",
+      "family": "gpt",
+      "size_bucket": "7b",
+      "default_context_len": 8192,
+      "multiplier_knobs": {
+        "quantization_factor": 1.0,
+        "long_context_penalty": 1.0
+      },
+      "notes": "Generated from pricing dataset; size_bucket inferred heuristically."
+    },
+    {
+      "model_id": "gpt_5",
+      "model_name": "Gpt 5",
+      "family": "gpt",
+      "size_bucket": "7b",
+      "default_context_len": 8192,
+      "multiplier_knobs": {
+        "quantization_factor": 1.0,
+        "long_context_penalty": 1.0
+      },
+      "notes": "Generated from pricing dataset; size_bucket inferred heuristically."
+    },
+    {
+      "model_id": "gpt_oss_120b",
+      "model_name": "Gpt Oss 120B",
+      "family": "gpt",
+      "size_bucket": "70b",
+      "default_context_len": 8192,
+      "multiplier_knobs": {
+        "quantization_factor": 1.0,
+        "long_context_penalty": 1.0
+      },
+      "notes": "Generated from pricing dataset; size_bucket inferred heuristically."
+    },
+    {
+      "model_id": "h100",
+      "model_name": "H100",
+      "family": "h100",
+      "size_bucket": "70b",
+      "default_context_len": 8192,
+      "multiplier_knobs": {
+        "quantization_factor": 1.0,
+        "long_context_penalty": 1.0
+      },
+      "notes": "Generated from pricing dataset; size_bucket inferred heuristically."
+    },
+    {
+      "model_id": "h100_sxm",
+      "model_name": "H100 Sxm",
+      "family": "h100",
+      "size_bucket": "70b",
+      "default_context_len": 8192,
+      "multiplier_knobs": {
+        "quantization_factor": 1.0,
+        "long_context_penalty": 1.0
+      },
+      "notes": "Generated from pricing dataset; size_bucket inferred heuristically."
+    },
+    {
+      "model_id": "h200",
+      "model_name": "H200",
+      "family": "h200",
+      "size_bucket": "405b",
+      "default_context_len": 8192,
+      "multiplier_knobs": {
+        "quantization_factor": 1.0,
+        "long_context_penalty": 1.0
+      },
+      "notes": "Generated from pricing dataset; size_bucket inferred heuristically."
+    },
+    {
+      "model_id": "l40s",
+      "model_name": "L40S",
+      "family": "l40s",
+      "size_bucket": "34b",
+      "default_context_len": 8192,
+      "multiplier_knobs": {
+        "quantization_factor": 1.0,
+        "long_context_penalty": 1.0
+      },
+      "notes": "Generated from pricing dataset; size_bucket inferred heuristically."
+    },
+    {
+      "model_id": "large_models",
+      "model_name": "Large Models",
+      "family": "large",
+      "size_bucket": "other",
+      "default_context_len": 8192,
+      "multiplier_knobs": {
+        "quantization_factor": 1.0,
+        "long_context_penalty": 1.0
+      },
+      "notes": "Generated from pricing dataset; size_bucket inferred heuristically."
+    },
+    {
+      "model_id": "llama_3_3_70b",
+      "model_name": "Llama 3 3 70B",
+      "family": "llama",
+      "size_bucket": "70b",
+      "default_context_len": 8192,
+      "multiplier_knobs": {
+        "quantization_factor": 1.0,
+        "long_context_penalty": 1.0
+      },
+      "notes": "Generated from pricing dataset; size_bucket inferred heuristically."
+    },
+    {
+      "model_id": "llama_4_maverick",
+      "model_name": "Llama 4 Maverick",
+      "family": "llama",
+      "size_bucket": "7b",
+      "default_context_len": 8192,
+      "multiplier_knobs": {
+        "quantization_factor": 1.0,
+        "long_context_penalty": 1.0
+      },
+      "notes": "Generated from pricing dataset; size_bucket inferred heuristically."
+    },
+    {
+      "model_id": "medium_models",
+      "model_name": "Medium Models",
+      "family": "medium",
+      "size_bucket": "other",
+      "default_context_len": 8192,
+      "multiplier_knobs": {
+        "quantization_factor": 1.0,
+        "long_context_penalty": 1.0
+      },
+      "notes": "Generated from pricing dataset; size_bucket inferred heuristically."
+    },
+    {
+      "model_id": "qwen3_coder_next",
+      "model_name": "Qwen3 Coder Next",
+      "family": "qwen3",
+      "size_bucket": "7b",
+      "default_context_len": 8192,
+      "multiplier_knobs": {
+        "quantization_factor": 1.0,
+        "long_context_penalty": 1.0
+      },
+      "notes": "Generated from pricing dataset; size_bucket inferred heuristically."
+    },
+    {
+      "model_id": "rtx_3090",
+      "model_name": "Rtx 3090",
+      "family": "rtx",
+      "size_bucket": "405b",
+      "default_context_len": 8192,
+      "multiplier_knobs": {
+        "quantization_factor": 1.0,
+        "long_context_penalty": 1.0
+      },
+      "notes": "Generated from pricing dataset; size_bucket inferred heuristically."
+    },
+    {
+      "model_id": "rtx_a5000",
+      "model_name": "Rtx A5000",
+      "family": "rtx",
+      "size_bucket": "405b",
+      "default_context_len": 8192,
+      "multiplier_knobs": {
+        "quantization_factor": 1.0,
+        "long_context_penalty": 1.0
+      },
+      "notes": "Generated from pricing dataset; size_bucket inferred heuristically."
+    },
+    {
+      "model_id": "small_models",
+      "model_name": "Small Models",
+      "family": "small",
+      "size_bucket": "other",
+      "default_context_len": 8192,
+      "multiplier_knobs": {
+        "quantization_factor": 1.0,
+        "long_context_penalty": 1.0
+      },
+      "notes": "Generated from pricing dataset; size_bucket inferred heuristically."
+    },
+    {
+      "model_id": "t4",
+      "model_name": "T4",
+      "family": "t4",
+      "size_bucket": "7b",
+      "default_context_len": 8192,
+      "multiplier_knobs": {
+        "quantization_factor": 1.0,
+        "long_context_penalty": 1.0
+      },
+      "notes": "Generated from pricing dataset; size_bucket inferred heuristically."
+    }
+  ]
+}

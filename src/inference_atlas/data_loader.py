@@ -1,19 +1,26 @@
-"""Data loading utilities for platform catalog and model specifications.
+"""Data loading utilities for pricing catalogs and model specifications.
 
-This module provides access to GPU platform pricing data and LLM model requirements.
-Data is loaded from the data/ directory at the project root.
+This module now supports two data layers:
+1) Legacy typed `PLATFORMS` in `data/platforms.py` (used by existing cost engine code)
+2) CSV-backed unified pricing datasets (routed by workload type)
 """
 
 from __future__ import annotations
 
+import csv
+from copy import deepcopy
+import json
 import sys
+from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 # Add project root to path to allow importing from data/
 _project_root = Path(__file__).parent.parent.parent
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
+
+from inference_atlas.workload_types import WorkloadType
 
 if TYPE_CHECKING:
     from data.platforms import Platform
@@ -26,8 +33,402 @@ if TYPE_CHECKING:
         recommended_memory_gb: int
         parameter_count: int
 
+DATASET_FILES = (
+    _project_root / "data" / "master_ai_pricing_dataset_16_providers.csv",
+    _project_root / "data" / "ai_pricing_final_4_providers.csv",
+)
 
-def get_platforms() -> dict[str, Platform]:
+MVP_CATALOG_DATA_FILES = {
+    "providers": _project_root / "data" / "providers.json",
+    "models": _project_root / "data" / "models.json",
+    "capacity_table": _project_root / "data" / "capacity_table.json",
+}
+
+MVP_CATALOG_SCHEMA_FILES = {
+    "providers": _project_root / "data" / "providers.schema.json",
+    "models": _project_root / "data" / "models.schema.json",
+    "capacity_table": _project_root / "data" / "capacity_table.schema.json",
+}
+
+REQUIRED_COLUMNS = {
+    "workload_type",
+    "provider",
+    "billing_type",
+    "sku_key",
+    "sku_name",
+    "model_key",
+    "unit_price_usd",
+    "unit_name",
+    "throughput_value",
+    "throughput_unit",
+    "memory_gb",
+    "latency_p50_ms",
+    "latency_p95_ms",
+    "region",
+    "notes",
+    "source_url",
+    "source_date",
+    "confidence",
+}
+
+WORKLOAD_ALIASES = {
+    "llm": WorkloadType.LLM,
+    "transcription": WorkloadType.SPEECH_TO_TEXT,
+    "speech_to_text": WorkloadType.SPEECH_TO_TEXT,
+    "stt": WorkloadType.SPEECH_TO_TEXT,
+    "tts": WorkloadType.TEXT_TO_SPEECH,
+    "text_to_speech": WorkloadType.TEXT_TO_SPEECH,
+    "embeddings": WorkloadType.EMBEDDINGS,
+    "embedding": WorkloadType.EMBEDDINGS,
+    "rerank": WorkloadType.EMBEDDINGS,
+    "image_gen": WorkloadType.IMAGE_GENERATION,
+    "image_generation": WorkloadType.IMAGE_GENERATION,
+    "vision": WorkloadType.VISION,
+}
+
+PROVIDER_KEY_ALIASES = {
+    "together_ai": "together",
+}
+
+
+@dataclass(frozen=True)
+class PricingRecord:
+    """One normalized pricing row from CSV datasets."""
+
+    workload_type: WorkloadType
+    provider: str
+    billing_type: str
+    sku_key: str
+    sku_name: str
+    model_key: str
+    unit_price_usd: float
+    unit_name: str
+    throughput_value: float | None
+    throughput_unit: str | None
+    memory_gb: int | None
+    latency_p50_ms: float | None
+    latency_p95_ms: float | None
+    region: str
+    notes: str
+    source_url: str
+    source_date: str
+    confidence: str
+
+
+_pricing_records_cache: list[PricingRecord] | None = None
+_mvp_catalog_validation_summary_cache: dict[str, int] | None = None
+_mvp_catalog_data_cache: dict[str, dict[str, Any]] | None = None
+
+
+def _parse_optional_float(value: str, field_name: str, source: Path, row_num: int) -> float | None:
+    if not value.strip():
+        return None
+    try:
+        parsed = float(value)
+    except ValueError as exc:
+        raise ValueError(
+            f"{source}:{row_num} invalid float for '{field_name}': {value!r}"
+        ) from exc
+    if parsed < 0:
+        raise ValueError(f"{source}:{row_num} field '{field_name}' cannot be negative")
+    return parsed
+
+
+def _parse_optional_int(value: str, field_name: str, source: Path, row_num: int) -> int | None:
+    if not value.strip():
+        return None
+    try:
+        parsed = int(float(value))
+    except ValueError as exc:
+        raise ValueError(
+            f"{source}:{row_num} invalid int for '{field_name}': {value!r}"
+        ) from exc
+    if parsed < 0:
+        raise ValueError(f"{source}:{row_num} field '{field_name}' cannot be negative")
+    return parsed
+
+
+def _normalize_workload_type(raw: str, source: Path, row_num: int) -> WorkloadType:
+    key = raw.strip().lower()
+    if key not in WORKLOAD_ALIASES:
+        valid = ", ".join(sorted(WORKLOAD_ALIASES))
+        raise ValueError(
+            f"{source}:{row_num} unsupported workload_type '{raw}'. Valid values/aliases: {valid}"
+        )
+    return WORKLOAD_ALIASES[key]
+
+
+def _load_pricing_file(path: Path) -> list[PricingRecord]:
+    if not path.exists():
+        raise FileNotFoundError(f"Pricing dataset not found: {path}")
+
+    with path.open("r", encoding="utf-8", newline="") as handle:
+        reader = csv.reader(handle)
+        rows_iter = iter(reader)
+        try:
+            fieldnames = next(rows_iter)
+        except StopIteration as exc:
+            raise ValueError(f"{path} has no header row") from exc
+        if not fieldnames:
+            raise ValueError(f"{path} has no header row")
+        missing = REQUIRED_COLUMNS - set(fieldnames)
+        if missing:
+            missing_str = ", ".join(sorted(missing))
+            raise ValueError(f"{path} is missing required columns: {missing_str}")
+
+        rows: list[PricingRecord] = []
+        header_len = len(fieldnames)
+        for row_num, values in enumerate(rows_iter, start=2):
+            if len(values) == header_len - 1:
+                # Current datasets frequently omit `latency_p95_ms`.
+                # Insert an empty value at that position to restore alignment.
+                latency_p95_idx = fieldnames.index("latency_p95_ms")
+                values = [*values[:latency_p95_idx], "", *values[latency_p95_idx:]]
+            if len(values) != header_len:
+                raise ValueError(
+                    f"{path}:{row_num} expected {header_len} columns, found {len(values)}"
+                )
+            row = dict(zip(fieldnames, values))
+            for field in (
+                "workload_type",
+                "provider",
+                "billing_type",
+                "sku_key",
+                "sku_name",
+                "model_key",
+                "unit_price_usd",
+                "unit_name",
+                "region",
+                "source_url",
+            ):
+                if not (row.get(field) or "").strip():
+                    raise ValueError(f"{path}:{row_num} missing required value in '{field}'")
+
+            workload_type = _normalize_workload_type(row["workload_type"], path, row_num)
+            unit_price_usd = _parse_optional_float(row["unit_price_usd"], "unit_price_usd", path, row_num)
+            if unit_price_usd is None or unit_price_usd <= 0:
+                raise ValueError(f"{path}:{row_num} field 'unit_price_usd' must be > 0")
+
+            rows.append(
+                PricingRecord(
+                    workload_type=workload_type,
+                    provider=row["provider"].strip(),
+                    billing_type=row["billing_type"].strip(),
+                    sku_key=row["sku_key"].strip(),
+                    sku_name=row["sku_name"].strip(),
+                    model_key=row["model_key"].strip(),
+                    unit_price_usd=unit_price_usd,
+                    unit_name=row["unit_name"].strip(),
+                    throughput_value=_parse_optional_float(
+                        row.get("throughput_value", ""),
+                        "throughput_value",
+                        path,
+                        row_num,
+                    ),
+                    throughput_unit=(row.get("throughput_unit", "") or "").strip() or None,
+                    memory_gb=_parse_optional_int(row.get("memory_gb", ""), "memory_gb", path, row_num),
+                    latency_p50_ms=_parse_optional_float(
+                        row.get("latency_p50_ms", ""),
+                        "latency_p50_ms",
+                        path,
+                        row_num,
+                    ),
+                    latency_p95_ms=_parse_optional_float(
+                        row.get("latency_p95_ms", ""),
+                        "latency_p95_ms",
+                        path,
+                        row_num,
+                    ),
+                    region=row["region"].strip(),
+                    notes=(row.get("notes", "") or "").strip(),
+                    source_url=row["source_url"].strip(),
+                    source_date=(row.get("source_date", "") or "").strip(),
+                    confidence=(row.get("confidence", "") or "").strip(),
+                )
+            )
+    return rows
+
+
+def _load_all_pricing_records() -> list[PricingRecord]:
+    global _pricing_records_cache
+    if _pricing_records_cache is None:
+        records: list[PricingRecord] = []
+        for path in DATASET_FILES:
+            records.extend(_load_pricing_file(path))
+        _pricing_records_cache = records
+    return list(_pricing_records_cache)
+
+
+def _load_json(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        raise FileNotFoundError(f"Required JSON file not found: {path}")
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Invalid JSON in {path}: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise ValueError(f"JSON root for {path} must be an object")
+    return payload
+
+
+def validate_mvp_catalogs(force: bool = False) -> dict[str, int]:
+    """Validate MVP JSON catalogs against their schemas and return entry counts."""
+    global _mvp_catalog_validation_summary_cache
+    global _mvp_catalog_data_cache
+
+    if _mvp_catalog_validation_summary_cache is not None and not force:
+        return dict(_mvp_catalog_validation_summary_cache)
+
+    try:
+        from jsonschema import Draft202012Validator
+    except ImportError as exc:
+        raise RuntimeError(
+            "The 'jsonschema' package is required for MVP catalog validation. "
+            "Install it with: pip install jsonschema"
+        ) from exc
+
+    summary: dict[str, int] = {}
+    loaded_data: dict[str, dict[str, Any]] = {}
+
+    for catalog_name, data_path in MVP_CATALOG_DATA_FILES.items():
+        schema_path = MVP_CATALOG_SCHEMA_FILES[catalog_name]
+        schema = _load_json(schema_path)
+        data = _load_json(data_path)
+
+        validator = Draft202012Validator(schema)
+        errors = sorted(validator.iter_errors(data), key=lambda e: list(e.path))
+        if errors:
+            first = errors[0]
+            location = ".".join(str(token) for token in first.path) or "<root>"
+            raise ValueError(
+                f"{data_path} failed schema validation at {location}: {first.message}"
+            )
+
+        if catalog_name == "providers":
+            summary[data_path.name] = len(data.get("providers", []))
+        elif catalog_name == "models":
+            summary[data_path.name] = len(data.get("models", []))
+        else:
+            summary[data_path.name] = len(data.get("entries", []))
+
+        loaded_data[catalog_name] = data
+
+    _mvp_catalog_validation_summary_cache = summary
+    _mvp_catalog_data_cache = loaded_data
+    return dict(summary)
+
+
+def get_mvp_catalog(catalog_name: str) -> dict[str, Any]:
+    """Return one schema-validated MVP catalog JSON object."""
+    validate_mvp_catalogs()
+    assert _mvp_catalog_data_cache is not None
+    if catalog_name not in _mvp_catalog_data_cache:
+        valid = ", ".join(sorted(_mvp_catalog_data_cache))
+        raise KeyError(f"Unknown catalog '{catalog_name}'. Valid options: {valid}")
+    return deepcopy(_mvp_catalog_data_cache[catalog_name])
+
+
+def get_pricing_records(workload_type: WorkloadType | str | None = None) -> list[PricingRecord]:
+    """Load normalized CSV pricing records, optionally filtered by workload type."""
+    records = _load_all_pricing_records()
+    if workload_type is None:
+        return records
+
+    if isinstance(workload_type, str):
+        normalized = _normalize_workload_type(workload_type, DATASET_FILES[0], 0)
+    else:
+        normalized = workload_type
+
+    return [row for row in records if row.workload_type == normalized]
+
+
+def get_pricing_by_workload() -> dict[WorkloadType, list[PricingRecord]]:
+    """Return all pricing rows grouped by workload type."""
+    grouped: dict[WorkloadType, list[PricingRecord]] = {}
+    for row in _load_all_pricing_records():
+        grouped.setdefault(row.workload_type, []).append(row)
+    return grouped
+
+
+def validate_pricing_datasets() -> dict[str, int]:
+    """Validate CSV datasets and return loaded row counts by filename."""
+    return {path.name: len(_load_pricing_file(path)) for path in DATASET_FILES}
+
+
+def _platform_type_from_billing(billing: str) -> str:
+    if billing == "autoscaling":
+        return "serverless"
+    if billing in {"per_second", "hourly", "hourly_variable"}:
+        return "dedicated"
+    if billing == "per_token":
+        return "model_based"
+    return "marketplace"
+
+
+def _hourly_rate_from_unit(unit_price_usd: float, unit_name: str) -> float:
+    unit = unit_name.strip().lower()
+    if unit == "gpu_second":
+        return unit_price_usd * 3600.0
+    if unit == "gpu_hour":
+        return unit_price_usd
+    raise ValueError(f"Unsupported GPU pricing unit '{unit_name}' for GPU-backed offering")
+
+
+def _derive_llm_platforms_from_records(records: list[PricingRecord]) -> dict[str, Any]:
+    derived: dict[str, Any] = {}
+    per_token_prices: dict[str, dict[str, list[float]]] = {}
+
+    for row in records:
+        if row.workload_type != WorkloadType.LLM:
+            continue
+
+        platform_key = PROVIDER_KEY_ALIASES.get(row.provider, row.provider)
+        platform = derived.setdefault(
+            platform_key,
+            {
+                "type": _platform_type_from_billing(row.billing_type),
+                "billing": row.billing_type,
+            },
+        )
+
+        if row.billing_type == "per_token" and row.unit_name == "1m_tokens":
+            model_prices = per_token_prices.setdefault(platform_key, {})
+            model_prices.setdefault(row.model_key, []).append(row.unit_price_usd)
+            continue
+
+        if row.memory_gb is None:
+            continue
+
+        try:
+            hourly_rate = _hourly_rate_from_unit(row.unit_price_usd, row.unit_name)
+        except ValueError:
+            continue
+
+        gpu_entry = {
+            "name": row.sku_name,
+            "hourly_rate": hourly_rate,
+            "memory_gb": row.memory_gb,
+            "tokens_per_second": int(row.throughput_value or 8000),
+        }
+        platform.setdefault("gpus", {})[row.sku_key] = gpu_entry
+
+    for platform_key, model_prices in per_token_prices.items():
+        platform = derived.setdefault(
+            platform_key,
+            {
+                "type": "model_based",
+                "billing": "per_token",
+            },
+        )
+        platform["models"] = {
+            model_key: {"price_per_m_tokens": sum(prices) / len(prices)}
+            for model_key, prices in model_prices.items()
+        }
+
+    return derived
+
+
+def get_platforms(workload_type: WorkloadType | str = WorkloadType.LLM) -> dict[str, Platform]:
     """Load GPU platform catalog with pricing and specs.
 
     Returns:
@@ -36,7 +437,37 @@ def get_platforms() -> dict[str, Platform]:
     """
     from data.platforms import PLATFORMS
 
-    return PLATFORMS
+    # Runtime safety: validate MVP planning catalogs before recommendation paths run.
+    validate_mvp_catalogs()
+
+    if isinstance(workload_type, str):
+        workload_type = _normalize_workload_type(workload_type, DATASET_FILES[0], 0)
+
+    if workload_type != WorkloadType.LLM:
+        return {}
+
+    merged: dict[str, Any] = deepcopy(PLATFORMS)
+    derived = _derive_llm_platforms_from_records(get_pricing_records(WorkloadType.LLM))
+
+    for platform_key, derived_platform in derived.items():
+        existing = merged.get(platform_key, {})
+        combined = deepcopy(existing)
+
+        # Keep existing type/billing defaults for compatibility when present.
+        combined.setdefault("type", derived_platform.get("type"))
+        combined.setdefault("billing", derived_platform.get("billing"))
+
+        if "gpus" in derived_platform:
+            combined.setdefault("gpus", {})
+            combined["gpus"].update(derived_platform["gpus"])
+
+        if "models" in derived_platform:
+            combined.setdefault("models", {})
+            combined["models"].update(derived_platform["models"])
+
+        merged[platform_key] = combined
+
+    return merged
 
 
 def get_models() -> dict[str, ModelRequirement]:

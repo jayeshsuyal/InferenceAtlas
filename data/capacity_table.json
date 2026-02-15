@@ -1,0 +1,605 @@
+{
+  "schema_version": "1.0.0",
+  "entries": [
+    {
+      "model_size_bucket": "7b",
+      "gpu_type": "a10",
+      "tok_s_1gpu": 2200.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.55
+    },
+    {
+      "model_size_bucket": "13b",
+      "gpu_type": "a10",
+      "tok_s_1gpu": 1650.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.55
+    },
+    {
+      "model_size_bucket": "34b",
+      "gpu_type": "a10",
+      "tok_s_1gpu": 924.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.55
+    },
+    {
+      "model_size_bucket": "70b",
+      "gpu_type": "a10",
+      "tok_s_1gpu": 484.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.45
+    },
+    {
+      "model_size_bucket": "405b",
+      "gpu_type": "a10",
+      "tok_s_1gpu": 99.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.45
+    },
+    {
+      "model_size_bucket": "7b",
+      "gpu_type": "a100_40gb",
+      "tok_s_1gpu": 6500.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.55
+    },
+    {
+      "model_size_bucket": "13b",
+      "gpu_type": "a100_40gb",
+      "tok_s_1gpu": 4875.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.55
+    },
+    {
+      "model_size_bucket": "34b",
+      "gpu_type": "a100_40gb",
+      "tok_s_1gpu": 2730.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.55
+    },
+    {
+      "model_size_bucket": "70b",
+      "gpu_type": "a100_40gb",
+      "tok_s_1gpu": 1430.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.45
+    },
+    {
+      "model_size_bucket": "405b",
+      "gpu_type": "a100_40gb",
+      "tok_s_1gpu": 292.5,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.45
+    },
+    {
+      "model_size_bucket": "7b",
+      "gpu_type": "a100_80gb",
+      "tok_s_1gpu": 8000.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.55
+    },
+    {
+      "model_size_bucket": "13b",
+      "gpu_type": "a100_80gb",
+      "tok_s_1gpu": 6000.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.55
+    },
+    {
+      "model_size_bucket": "34b",
+      "gpu_type": "a100_80gb",
+      "tok_s_1gpu": 3360.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.55
+    },
+    {
+      "model_size_bucket": "70b",
+      "gpu_type": "a100_80gb",
+      "tok_s_1gpu": 1760.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.45
+    },
+    {
+      "model_size_bucket": "405b",
+      "gpu_type": "a100_80gb",
+      "tok_s_1gpu": 360.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.45
+    },
+    {
+      "model_size_bucket": "7b",
+      "gpu_type": "a100_serverless",
+      "tok_s_1gpu": 6500.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.55
+    },
+    {
+      "model_size_bucket": "13b",
+      "gpu_type": "a100_serverless",
+      "tok_s_1gpu": 4875.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.55
+    },
+    {
+      "model_size_bucket": "34b",
+      "gpu_type": "a100_serverless",
+      "tok_s_1gpu": 2730.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.55
+    },
+    {
+      "model_size_bucket": "70b",
+      "gpu_type": "a100_serverless",
+      "tok_s_1gpu": 1430.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.45
+    },
+    {
+      "model_size_bucket": "405b",
+      "gpu_type": "a100_serverless",
+      "tok_s_1gpu": 292.5,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.45
+    },
+    {
+      "model_size_bucket": "7b",
+      "gpu_type": "a100_sxm_80gb_secure",
+      "tok_s_1gpu": 8000.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.55
+    },
+    {
+      "model_size_bucket": "13b",
+      "gpu_type": "a100_sxm_80gb_secure",
+      "tok_s_1gpu": 6000.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.55
+    },
+    {
+      "model_size_bucket": "34b",
+      "gpu_type": "a100_sxm_80gb_secure",
+      "tok_s_1gpu": 3360.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.55
+    },
+    {
+      "model_size_bucket": "70b",
+      "gpu_type": "a100_sxm_80gb_secure",
+      "tok_s_1gpu": 1760.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.45
+    },
+    {
+      "model_size_bucket": "405b",
+      "gpu_type": "a100_sxm_80gb_secure",
+      "tok_s_1gpu": 360.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.45
+    },
+    {
+      "model_size_bucket": "7b",
+      "gpu_type": "h100_gpu",
+      "tok_s_1gpu": 14000.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.55
+    },
+    {
+      "model_size_bucket": "13b",
+      "gpu_type": "h100_gpu",
+      "tok_s_1gpu": 10500.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.55
+    },
+    {
+      "model_size_bucket": "34b",
+      "gpu_type": "h100_gpu",
+      "tok_s_1gpu": 5880.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.55
+    },
+    {
+      "model_size_bucket": "70b",
+      "gpu_type": "h100_gpu",
+      "tok_s_1gpu": 3080.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.45
+    },
+    {
+      "model_size_bucket": "405b",
+      "gpu_type": "h100_gpu",
+      "tok_s_1gpu": 630.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.45
+    },
+    {
+      "model_size_bucket": "7b",
+      "gpu_type": "h100_serverless",
+      "tok_s_1gpu": 14000.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.55
+    },
+    {
+      "model_size_bucket": "13b",
+      "gpu_type": "h100_serverless",
+      "tok_s_1gpu": 10500.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.55
+    },
+    {
+      "model_size_bucket": "34b",
+      "gpu_type": "h100_serverless",
+      "tok_s_1gpu": 5880.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.55
+    },
+    {
+      "model_size_bucket": "70b",
+      "gpu_type": "h100_serverless",
+      "tok_s_1gpu": 3080.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.45
+    },
+    {
+      "model_size_bucket": "405b",
+      "gpu_type": "h100_serverless",
+      "tok_s_1gpu": 630.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.45
+    },
+    {
+      "model_size_bucket": "7b",
+      "gpu_type": "h100_sxm",
+      "tok_s_1gpu": 15000.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.55
+    },
+    {
+      "model_size_bucket": "13b",
+      "gpu_type": "h100_sxm",
+      "tok_s_1gpu": 11250.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.55
+    },
+    {
+      "model_size_bucket": "34b",
+      "gpu_type": "h100_sxm",
+      "tok_s_1gpu": 6300.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.55
+    },
+    {
+      "model_size_bucket": "70b",
+      "gpu_type": "h100_sxm",
+      "tok_s_1gpu": 3300.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.45
+    },
+    {
+      "model_size_bucket": "405b",
+      "gpu_type": "h100_sxm",
+      "tok_s_1gpu": 675.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.45
+    },
+    {
+      "model_size_bucket": "7b",
+      "gpu_type": "h100_sxm_secure",
+      "tok_s_1gpu": 15000.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.55
+    },
+    {
+      "model_size_bucket": "13b",
+      "gpu_type": "h100_sxm_secure",
+      "tok_s_1gpu": 11250.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.55
+    },
+    {
+      "model_size_bucket": "34b",
+      "gpu_type": "h100_sxm_secure",
+      "tok_s_1gpu": 6300.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.55
+    },
+    {
+      "model_size_bucket": "70b",
+      "gpu_type": "h100_sxm_secure",
+      "tok_s_1gpu": 3300.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.45
+    },
+    {
+      "model_size_bucket": "405b",
+      "gpu_type": "h100_sxm_secure",
+      "tok_s_1gpu": 675.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.45
+    },
+    {
+      "model_size_bucket": "7b",
+      "gpu_type": "h200_serverless",
+      "tok_s_1gpu": 18000.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.55
+    },
+    {
+      "model_size_bucket": "13b",
+      "gpu_type": "h200_serverless",
+      "tok_s_1gpu": 13500.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.55
+    },
+    {
+      "model_size_bucket": "34b",
+      "gpu_type": "h200_serverless",
+      "tok_s_1gpu": 7560.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.55
+    },
+    {
+      "model_size_bucket": "70b",
+      "gpu_type": "h200_serverless",
+      "tok_s_1gpu": 3960.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.45
+    },
+    {
+      "model_size_bucket": "405b",
+      "gpu_type": "h200_serverless",
+      "tok_s_1gpu": 810.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.45
+    },
+    {
+      "model_size_bucket": "7b",
+      "gpu_type": "l40s",
+      "tok_s_1gpu": 4500.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.55
+    },
+    {
+      "model_size_bucket": "13b",
+      "gpu_type": "l40s",
+      "tok_s_1gpu": 3375.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.55
+    },
+    {
+      "model_size_bucket": "34b",
+      "gpu_type": "l40s",
+      "tok_s_1gpu": 1890.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.55
+    },
+    {
+      "model_size_bucket": "70b",
+      "gpu_type": "l40s",
+      "tok_s_1gpu": 990.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.45
+    },
+    {
+      "model_size_bucket": "405b",
+      "gpu_type": "l40s",
+      "tok_s_1gpu": 202.5,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.45
+    },
+    {
+      "model_size_bucket": "7b",
+      "gpu_type": "rtx_3090_community",
+      "tok_s_1gpu": 2000.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.55
+    },
+    {
+      "model_size_bucket": "13b",
+      "gpu_type": "rtx_3090_community",
+      "tok_s_1gpu": 1500.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.55
+    },
+    {
+      "model_size_bucket": "34b",
+      "gpu_type": "rtx_3090_community",
+      "tok_s_1gpu": 840.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.55
+    },
+    {
+      "model_size_bucket": "70b",
+      "gpu_type": "rtx_3090_community",
+      "tok_s_1gpu": 440.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.45
+    },
+    {
+      "model_size_bucket": "405b",
+      "gpu_type": "rtx_3090_community",
+      "tok_s_1gpu": 90.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.45
+    },
+    {
+      "model_size_bucket": "7b",
+      "gpu_type": "rtx_3090_secure",
+      "tok_s_1gpu": 2000.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.55
+    },
+    {
+      "model_size_bucket": "13b",
+      "gpu_type": "rtx_3090_secure",
+      "tok_s_1gpu": 1500.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.55
+    },
+    {
+      "model_size_bucket": "34b",
+      "gpu_type": "rtx_3090_secure",
+      "tok_s_1gpu": 840.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.55
+    },
+    {
+      "model_size_bucket": "70b",
+      "gpu_type": "rtx_3090_secure",
+      "tok_s_1gpu": 440.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.45
+    },
+    {
+      "model_size_bucket": "405b",
+      "gpu_type": "rtx_3090_secure",
+      "tok_s_1gpu": 90.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.45
+    },
+    {
+      "model_size_bucket": "7b",
+      "gpu_type": "rtx_a5000_secure",
+      "tok_s_1gpu": 1700.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.55
+    },
+    {
+      "model_size_bucket": "13b",
+      "gpu_type": "rtx_a5000_secure",
+      "tok_s_1gpu": 1275.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.55
+    },
+    {
+      "model_size_bucket": "34b",
+      "gpu_type": "rtx_a5000_secure",
+      "tok_s_1gpu": 714.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.55
+    },
+    {
+      "model_size_bucket": "70b",
+      "gpu_type": "rtx_a5000_secure",
+      "tok_s_1gpu": 374.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.45
+    },
+    {
+      "model_size_bucket": "405b",
+      "gpu_type": "rtx_a5000_secure",
+      "tok_s_1gpu": 76.5,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.45
+    },
+    {
+      "model_size_bucket": "7b",
+      "gpu_type": "t4",
+      "tok_s_1gpu": 1200.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.55
+    },
+    {
+      "model_size_bucket": "13b",
+      "gpu_type": "t4",
+      "tok_s_1gpu": 900.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.55
+    },
+    {
+      "model_size_bucket": "34b",
+      "gpu_type": "t4",
+      "tok_s_1gpu": 504.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.55
+    },
+    {
+      "model_size_bucket": "70b",
+      "gpu_type": "t4",
+      "tok_s_1gpu": 264.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.45
+    },
+    {
+      "model_size_bucket": "405b",
+      "gpu_type": "t4",
+      "tok_s_1gpu": 54.0,
+      "source_type": "estimated",
+      "source_note": "Generated heuristically from provider pricing catalog; replace with benchmark measurements.",
+      "confidence": 0.45
+    }
+  ]
+}

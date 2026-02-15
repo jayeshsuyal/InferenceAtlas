@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://inference-atlas.local/schemas/capacity_table.schema.json",
+  "title": "InferenceAtlas Capacity Table",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "entries"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "entries": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "model_size_bucket",
+          "gpu_type",
+          "tok_s_1gpu",
+          "source_type",
+          "source_note",
+          "confidence"
+        ],
+        "properties": {
+          "model_size_bucket": {
+            "type": "string",
+            "enum": [
+              "7b",
+              "13b",
+              "34b",
+              "70b",
+              "405b",
+              "other"
+            ]
+          },
+          "gpu_type": {
+            "type": "string",
+            "minLength": 1
+          },
+          "tok_s_1gpu": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "source_type": {
+            "type": "string",
+            "enum": [
+              "estimated",
+              "measured"
+            ]
+          },
+          "source_note": {
+            "type": "string",
+            "minLength": 1
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0.0,
+            "maximum": 1.0
+          }
+        }
+      }
+    }
+  }
+}

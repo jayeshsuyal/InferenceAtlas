@@ -1,0 +1,52 @@
+workload_type,provider,billing_type,sku_key,sku_name,model_key,unit_price_usd,unit_name,throughput_value,throughput_unit,memory_gb,latency_p50_ms,latency_p95_ms,region,notes,source_url,source_date,confidence
+tts,elevenlabs,per_token,flash_turbo_business,Flash/Turbo Business,flash_v2_5,0.06,1k_chars,,,,,75,global,Business tier ultra-low latency,https://elevenlabs.io/pricing/api,2026-02-13,high
+tts,elevenlabs,per_token,flash_turbo_scale,Flash/Turbo Scale,flash_v2_5,0.08,1k_chars,,,,,75,global,Scale plan pricing,https://elevenlabs.io/pricing/api,2026-02-13,high
+tts,elevenlabs,per_token,flash_turbo_pro,Flash/Turbo Pro,flash_v2_5,0.10,1k_chars,,,,,75,global,Pro plan pricing,https://elevenlabs.io/pricing/api,2026-02-13,high
+tts,elevenlabs,per_token,multilingual_v2_business,Multilingual v2/v3 Business,multilingual_v2,0.12,1k_chars,,,,250,300,global,High quality voice generation,https://elevenlabs.io/pricing/api,2026-02-13,high
+tts,elevenlabs,per_token,multilingual_v2_scale,Multilingual v2/v3 Scale,multilingual_v2,0.17,1k_chars,,,,250,300,global,Scale plan high quality,https://elevenlabs.io/pricing/api,2026-02-13,high
+tts,elevenlabs,per_token,multilingual_v2_pro,Multilingual v2/v3 Pro,multilingual_v2,0.20,1k_chars,,,,250,300,global,Pro plan high quality,https://elevenlabs.io/pricing/api,2026-02-13,high
+transcription,elevenlabs,per_minute,scribe_v2_business,Scribe v2 Business,scribe_v2,0.22,audio_hour,,,,,global,98%+ transcription accuracy,https://elevenlabs.io/pricing/api,2026-02-13,high
+transcription,elevenlabs,per_minute,scribe_v2_scale,Scribe v2 Scale,scribe_v2,0.30,audio_hour,,,,,global,Scale plan transcription,https://elevenlabs.io/pricing/api,2026-02-13,high
+transcription,elevenlabs,per_minute,scribe_v2_pro,Scribe v2 Pro,scribe_v2,0.33,audio_hour,,,,,global,Pro plan transcription,https://elevenlabs.io/pricing/api,2026-02-13,high
+transcription,elevenlabs,per_minute,scribe_v2_realtime_business,Scribe v2 Realtime Business,scribe_v2_realtime,0.39,audio_hour,,,,,150,global,Low latency real-time STT,https://elevenlabs.io/pricing/api,2026-02-13,high
+transcription,elevenlabs,per_minute,scribe_v2_realtime_scale,Scribe v2 Realtime Scale,scribe_v2_realtime,0.42,audio_hour,,,,,150,global,Scale realtime transcription,https://elevenlabs.io/pricing/api,2026-02-13,high
+tts,elevenlabs,per_minute,music_business,Music Generation Business,music_gen,0.28,audio_min,,,,,global,Music generation from text,https://elevenlabs.io/pricing/api,2026-02-13,high
+tts,elevenlabs,per_minute,voice_isolator_business,Voice Isolator Business,voice_isolator,0.12,audio_min,,,,,global,Removes ambient sounds,https://elevenlabs.io/pricing/api,2026-02-13,high
+tts,elevenlabs,per_minute,voice_changer_business,Voice Changer Business,voice_changer,0.12,audio_min,,,,,global,Fast real-time processing,https://elevenlabs.io/pricing/api,2026-02-13,high
+tts,elevenlabs,per_token,sound_effects_business,Sound Effects Business,sfx_gen,0.07,generation,,,,,global,Royalty-free sound effects,https://elevenlabs.io/pricing/api,2026-02-13,high
+tts,elevenlabs,per_minute,dubbing_v1_business,Dubbing v1 Business,dubbing_v1,0.24,audio_min,,,,,global,Auto speaker detection,https://elevenlabs.io/pricing/api,2026-02-13,high
+image_gen,fal_ai,per_second,wan_25,Wan 2.5 Video,wan_25,0.05,video_second,,,,,global,Text to video generation,https://fal.ai/pricing,2026-02-13,high
+image_gen,fal_ai,per_second,kling_25_turbo_pro,Kling 2.5 Turbo Pro Video,kling_25_turbo,0.07,video_second,,,,,global,High quality video gen,https://fal.ai/pricing,2026-02-13,high
+image_gen,fal_ai,per_second,veo_3,Veo 3 Video,veo_3,0.40,video_second,,,,,global,Premium video generation,https://fal.ai/pricing,2026-02-13,high
+image_gen,fal_ai,per_image,ovi_video,Ovi Video,ovi,0.20,video,,,,,global,Image to video conversion,https://fal.ai/pricing,2026-02-13,high
+image_gen,fal_ai,per_image,seedream_v4,Seedream V4,seedream_v4,0.03,image,,,,,global,Text to image generation,https://fal.ai/pricing,2026-02-13,high
+image_gen,fal_ai,per_image,flux_kontext_pro,Flux Kontext Pro,flux_kontext_pro,0.04,image,,,,,global,Advanced image generation,https://fal.ai/pricing,2026-02-13,high
+image_gen,fal_ai,per_image,nanobanana,Nanobanana,nanobanana,0.0398,image,,,,,global,Fast image generation,https://fal.ai/pricing,2026-02-13,high
+image_gen,fal_ai,per_token,qwen_image,Qwen Image,qwen_image,0.02,megapixel,,,,,global,Priced per megapixel,https://fal.ai/pricing,2026-02-13,high
+llm,fal_ai,hourly,h100_serverless,H100 Serverless,h100,1.89,gpu_hour,,,80,,global,Starting price per hour,https://fal.ai/pricing,2026-02-13,high
+llm,fal_ai,hourly,h200_serverless,H200 Serverless,h200,2.10,gpu_hour,,,141,,global,High VRAM serverless,https://fal.ai/pricing,2026-02-13,high
+llm,fal_ai,hourly,a100_serverless,A100 Serverless,a100,0.99,gpu_hour,,,40,,global,Cost-effective GPU option,https://fal.ai/pricing,2026-02-13,high
+vision,google_cloud,per_token,label_detection_tier1,Label Detection Tier 1,vision_api,1.50,1k_units,,,,,global,Units 1001-5M per month,https://cloud.google.com/vision/pricing,2026-02-13,high
+vision,google_cloud,per_token,label_detection_tier2,Label Detection Tier 2,vision_api,1.00,1k_units,,,,,global,Units 5M+ per month,https://cloud.google.com/vision/pricing,2026-02-13,high
+vision,google_cloud,per_token,text_detection_tier1,Text Detection (OCR) Tier 1,vision_api,1.50,1k_units,,,,,global,Units 1001-5M per month,https://cloud.google.com/vision/pricing,2026-02-13,high
+vision,google_cloud,per_token,text_detection_tier2,Text Detection (OCR) Tier 2,vision_api,0.60,1k_units,,,,,global,Units 5M+ per month,https://cloud.google.com/vision/pricing,2026-02-13,high
+vision,google_cloud,per_token,face_detection_tier1,Face Detection Tier 1,vision_api,1.50,1k_units,,,,,global,Units 1001-5M per month,https://cloud.google.com/vision/pricing,2026-02-13,high
+vision,google_cloud,per_token,face_detection_tier2,Face Detection Tier 2,vision_api,0.60,1k_units,,,,,global,Units 5M+ per month,https://cloud.google.com/vision/pricing,2026-02-13,high
+vision,google_cloud,per_token,landmark_detection_tier1,Landmark Detection Tier 1,vision_api,1.50,1k_units,,,,,global,Units 1001-5M per month,https://cloud.google.com/vision/pricing,2026-02-13,high
+vision,google_cloud,per_token,landmark_detection_tier2,Landmark Detection Tier 2,vision_api,0.60,1k_units,,,,,global,Units 5M+ per month,https://cloud.google.com/vision/pricing,2026-02-13,high
+vision,google_cloud,per_token,logo_detection_tier1,Logo Detection Tier 1,vision_api,1.50,1k_units,,,,,global,Units 1001-5M per month,https://cloud.google.com/vision/pricing,2026-02-13,high
+vision,google_cloud,per_token,logo_detection_tier2,Logo Detection Tier 2,vision_api,0.60,1k_units,,,,,global,Units 5M+ per month,https://cloud.google.com/vision/pricing,2026-02-13,high
+vision,google_cloud,per_token,web_detection_tier1,Web Detection Tier 1,vision_api,3.50,1k_units,,,,,global,Units 1001-5M per month,https://cloud.google.com/vision/pricing,2026-02-13,high
+vision,google_cloud,per_token,object_localization_tier1,Object Localization Tier 1,vision_api,2.25,1k_units,,,,,global,Units 1001-5M per month,https://cloud.google.com/vision/pricing,2026-02-13,high
+vision,google_cloud,per_token,object_localization_tier2,Object Localization Tier 2,vision_api,1.50,1k_units,,,,,global,Units 5M+ per month,https://cloud.google.com/vision/pricing,2026-02-13,high
+vision,aws_rekognition,per_image,detect_labels_tier1,DetectLabels Group 2 Tier 1,rekognition,1.00,1k_images,,,,,us-east-1,First 1M images per month,https://aws.amazon.com/rekognition/pricing,2026-02-13,high
+vision,aws_rekognition,per_image,detect_labels_tier2,DetectLabels Group 2 Tier 2,rekognition,0.80,1k_images,,,,,us-east-1,1M-10M images per month,https://aws.amazon.com/rekognition/pricing,2026-02-13,high
+vision,aws_rekognition,per_image,detect_labels_tier3,DetectLabels Group 2 Tier 3,rekognition,0.60,1k_images,,,,,us-east-1,10M-100M images per month,https://aws.amazon.com/rekognition/pricing,2026-02-13,high
+vision,aws_rekognition,per_image,detect_labels_tier4,DetectLabels Group 2 Tier 4,rekognition,0.40,1k_images,,,,,us-east-1,100M+ images per month,https://aws.amazon.com/rekognition/pricing,2026-02-13,high
+vision,aws_rekognition,per_image,face_detection_tier1,Face Detection Group 1 Tier 1,rekognition,1.00,1k_images,,,,,us-east-1,First 1M images per month,https://aws.amazon.com/rekognition/pricing,2026-02-13,high
+vision,aws_rekognition,per_image,face_search_tier1,Face Search Group 1 Tier 1,rekognition,1.00,1k_images,,,,,us-east-1,First 1M images per month,https://aws.amazon.com/rekognition/pricing,2026-02-13,high
+vision,aws_rekognition,per_minute,video_label_detection,Video Label Detection,rekognition_video,0.10,video_min,,,,,us-east-1,Stored video analysis,https://aws.amazon.com/rekognition/pricing,2026-02-13,high
+vision,aws_rekognition,per_minute,video_content_moderation,Video Content Moderation,rekognition_video,0.10,video_min,,,,,us-east-1,Stored video analysis,https://aws.amazon.com/rekognition/pricing,2026-02-13,high
+vision,aws_rekognition,per_minute,video_face_detection,Video Face Detection,rekognition_video,0.10,video_min,,,,,us-east-1,Stored video analysis,https://aws.amazon.com/rekognition/pricing,2026-02-13,high
+vision,aws_rekognition,per_minute,video_celebrity_recognition,Video Celebrity Recognition,rekognition_video,0.10,video_min,,,,,us-east-1,Stored video analysis,https://aws.amazon.com/rekognition/pricing,2026-02-13,high
+vision,aws_rekognition,per_minute,video_person_pathing,Video Person Pathing,rekognition_video,0.10,video_min,,,,,us-east-1,Track person movement,https://aws.amazon.com/rekognition/pricing,2026-02-13,high

@@ -1,0 +1,190 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://inference-atlas.local/schemas/providers.schema.json",
+  "title": "InferenceAtlas Providers",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "providers"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "providers": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "provider_id",
+          "provider_name",
+          "offerings"
+        ],
+        "properties": {
+          "provider_id": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+$"
+          },
+          "provider_name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "offerings": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "offering_id",
+                "billing_mode",
+                "gpu_type",
+                "model_refs",
+                "allowed_gpu_counts",
+                "price_per_gpu_hour_usd",
+                "price_per_1m_tokens_usd",
+                "tps_cap",
+                "region",
+                "confidence"
+              ],
+              "properties": {
+                "offering_id": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9_]+$"
+                },
+                "billing_mode": {
+                  "type": "string",
+                  "enum": [
+                    "per_token",
+                    "dedicated_hourly",
+                    "autoscale_hourly"
+                  ]
+                },
+                "gpu_type": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "minLength": 1
+                },
+                "model_refs": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "allowed_gpu_counts": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "uniqueItems": true
+                },
+                "price_per_gpu_hour_usd": {
+                  "type": [
+                    "number",
+                    "null"
+                  ],
+                  "exclusiveMinimum": 0
+                },
+                "price_per_1m_tokens_usd": {
+                  "type": [
+                    "number",
+                    "null"
+                  ],
+                  "exclusiveMinimum": 0
+                },
+                "tps_cap": {
+                  "type": [
+                    "number",
+                    "null"
+                  ],
+                  "exclusiveMinimum": 0
+                },
+                "region": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "notes": {
+                  "type": "string"
+                },
+                "confidence": {
+                  "type": "string",
+                  "enum": [
+                    "estimated",
+                    "measured",
+                    "vendor_listed"
+                  ]
+                }
+              },
+              "allOf": [
+                {
+                  "if": {
+                    "properties": {
+                      "billing_mode": {
+                        "const": "per_token"
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "gpu_type": {
+                        "type": "null"
+                      },
+                      "allowed_gpu_counts": {
+                        "maxItems": 0
+                      },
+                      "price_per_1m_tokens_usd": {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      "price_per_gpu_hour_usd": {
+                        "type": "null"
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "billing_mode": {
+                        "enum": [
+                          "dedicated_hourly",
+                          "autoscale_hourly"
+                        ]
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "gpu_type": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "allowed_gpu_counts": {
+                        "minItems": 1
+                      },
+                      "price_per_gpu_hour_usd": {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      "price_per_1m_tokens_usd": {
+                        "type": "null"
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

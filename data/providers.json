@@ -1,0 +1,1059 @@
+{
+  "schema_version": "1.0.0",
+  "providers": [
+    {
+      "provider_id": "anthropic",
+      "provider_name": "Anthropic",
+      "offerings": [
+        {
+          "offering_id": "anthropic_claude_opus_45_input",
+          "billing_mode": "per_token",
+          "gpu_type": null,
+          "model_refs": [
+            "claude_opus_4_5"
+          ],
+          "allowed_gpu_counts": [],
+          "price_per_gpu_hour_usd": null,
+          "price_per_1m_tokens_usd": 5.0,
+          "tps_cap": null,
+          "region": "global",
+          "notes": "Input tokens",
+          "confidence": "vendor_listed"
+        },
+        {
+          "offering_id": "anthropic_claude_opus_45_output",
+          "billing_mode": "per_token",
+          "gpu_type": null,
+          "model_refs": [
+            "claude_opus_4_5"
+          ],
+          "allowed_gpu_counts": [],
+          "price_per_gpu_hour_usd": null,
+          "price_per_1m_tokens_usd": 25.0,
+          "tps_cap": null,
+          "region": "global",
+          "notes": "Output tokens",
+          "confidence": "vendor_listed"
+        },
+        {
+          "offering_id": "anthropic_claude_sonnet_45_input",
+          "billing_mode": "per_token",
+          "gpu_type": null,
+          "model_refs": [
+            "claude_sonnet_4_5"
+          ],
+          "allowed_gpu_counts": [],
+          "price_per_gpu_hour_usd": null,
+          "price_per_1m_tokens_usd": 3.0,
+          "tps_cap": null,
+          "region": "global",
+          "notes": "Input tokens",
+          "confidence": "vendor_listed"
+        },
+        {
+          "offering_id": "anthropic_claude_sonnet_45_output",
+          "billing_mode": "per_token",
+          "gpu_type": null,
+          "model_refs": [
+            "claude_sonnet_4_5"
+          ],
+          "allowed_gpu_counts": [],
+          "price_per_gpu_hour_usd": null,
+          "price_per_1m_tokens_usd": 15.0,
+          "tps_cap": null,
+          "region": "global",
+          "notes": "Output tokens",
+          "confidence": "vendor_listed"
+        },
+        {
+          "offering_id": "anthropic_claude_haiku_45_input",
+          "billing_mode": "per_token",
+          "gpu_type": null,
+          "model_refs": [
+            "claude_haiku_4_5"
+          ],
+          "allowed_gpu_counts": [],
+          "price_per_gpu_hour_usd": null,
+          "price_per_1m_tokens_usd": 1.0,
+          "tps_cap": null,
+          "region": "global",
+          "notes": "Input tokens",
+          "confidence": "vendor_listed"
+        },
+        {
+          "offering_id": "anthropic_claude_haiku_45_output",
+          "billing_mode": "per_token",
+          "gpu_type": null,
+          "model_refs": [
+            "claude_haiku_4_5"
+          ],
+          "allowed_gpu_counts": [],
+          "price_per_gpu_hour_usd": null,
+          "price_per_1m_tokens_usd": 5.0,
+          "tps_cap": null,
+          "region": "global",
+          "notes": "Output tokens",
+          "confidence": "vendor_listed"
+        }
+      ]
+    },
+    {
+      "provider_id": "baseten",
+      "provider_name": "Baseten",
+      "offerings": [
+        {
+          "offering_id": "baseten_glm_47_input",
+          "billing_mode": "per_token",
+          "gpu_type": null,
+          "model_refs": [
+            "glm_4_7"
+          ],
+          "allowed_gpu_counts": [],
+          "price_per_gpu_hour_usd": null,
+          "price_per_1m_tokens_usd": 0.6,
+          "tps_cap": null,
+          "region": "global",
+          "notes": "Input tokens",
+          "confidence": "vendor_listed"
+        },
+        {
+          "offering_id": "baseten_glm_47_output",
+          "billing_mode": "per_token",
+          "gpu_type": null,
+          "model_refs": [
+            "glm_4_7"
+          ],
+          "allowed_gpu_counts": [],
+          "price_per_gpu_hour_usd": null,
+          "price_per_1m_tokens_usd": 2.2,
+          "tps_cap": null,
+          "region": "global",
+          "notes": "Output tokens",
+          "confidence": "vendor_listed"
+        },
+        {
+          "offering_id": "baseten_gpt_oss_120b_input",
+          "billing_mode": "per_token",
+          "gpu_type": null,
+          "model_refs": [
+            "gpt_oss_120b"
+          ],
+          "allowed_gpu_counts": [],
+          "price_per_gpu_hour_usd": null,
+          "price_per_1m_tokens_usd": 0.1,
+          "tps_cap": null,
+          "region": "global",
+          "notes": "Input tokens",
+          "confidence": "vendor_listed"
+        },
+        {
+          "offering_id": "baseten_gpt_oss_120b_output",
+          "billing_mode": "per_token",
+          "gpu_type": null,
+          "model_refs": [
+            "gpt_oss_120b"
+          ],
+          "allowed_gpu_counts": [],
+          "price_per_gpu_hour_usd": null,
+          "price_per_1m_tokens_usd": 0.5,
+          "tps_cap": null,
+          "region": "global",
+          "notes": "Output tokens",
+          "confidence": "vendor_listed"
+        },
+        {
+          "offering_id": "baseten_deepseek_v31_input",
+          "billing_mode": "per_token",
+          "gpu_type": null,
+          "model_refs": [
+            "deepseek_v3_1"
+          ],
+          "allowed_gpu_counts": [],
+          "price_per_gpu_hour_usd": null,
+          "price_per_1m_tokens_usd": 0.5,
+          "tps_cap": null,
+          "region": "global",
+          "notes": "Input tokens",
+          "confidence": "vendor_listed"
+        },
+        {
+          "offering_id": "baseten_deepseek_v31_output",
+          "billing_mode": "per_token",
+          "gpu_type": null,
+          "model_refs": [
+            "deepseek_v3_1"
+          ],
+          "allowed_gpu_counts": [],
+          "price_per_gpu_hour_usd": null,
+          "price_per_1m_tokens_usd": 1.5,
+          "tps_cap": null,
+          "region": "global",
+          "notes": "Output tokens",
+          "confidence": "vendor_listed"
+        }
+      ]
+    },
+    {
+      "provider_id": "cohere",
+      "provider_name": "Cohere",
+      "offerings": [
+        {
+          "offering_id": "cohere_command_a_input",
+          "billing_mode": "per_token",
+          "gpu_type": null,
+          "model_refs": [
+            "command_a"
+          ],
+          "allowed_gpu_counts": [],
+          "price_per_gpu_hour_usd": null,
+          "price_per_1m_tokens_usd": 2.5,
+          "tps_cap": null,
+          "region": "global",
+          "notes": "Input tokens",
+          "confidence": "vendor_listed"
+        },
+        {
+          "offering_id": "cohere_command_a_output",
+          "billing_mode": "per_token",
+          "gpu_type": null,
+          "model_refs": [
+            "command_a"
+          ],
+          "allowed_gpu_counts": [],
+          "price_per_gpu_hour_usd": null,
+          "price_per_1m_tokens_usd": 10.0,
+          "tps_cap": null,
+          "region": "global",
+          "notes": "Output tokens",
+          "confidence": "vendor_listed"
+        },
+        {
+          "offering_id": "cohere_command_r_input",
+          "billing_mode": "per_token",
+          "gpu_type": null,
+          "model_refs": [
+            "command_r"
+          ],
+          "allowed_gpu_counts": [],
+          "price_per_gpu_hour_usd": null,
+          "price_per_1m_tokens_usd": 0.15,
+          "tps_cap": null,
+          "region": "global",
+          "notes": "Input tokens",
+          "confidence": "vendor_listed"
+        },
+        {
+          "offering_id": "cohere_command_r_output",
+          "billing_mode": "per_token",
+          "gpu_type": null,
+          "model_refs": [
+            "command_r"
+          ],
+          "allowed_gpu_counts": [],
+          "price_per_gpu_hour_usd": null,
+          "price_per_1m_tokens_usd": 0.6,
+          "tps_cap": null,
+          "region": "global",
+          "notes": "Output tokens",
+          "confidence": "vendor_listed"
+        }
+      ]
+    },
+    {
+      "provider_id": "fal_ai",
+      "provider_name": "Fal AI",
+      "offerings": [
+        {
+          "offering_id": "fal_ai_h100_serverless",
+          "billing_mode": "autoscale_hourly",
+          "gpu_type": "h100_serverless",
+          "model_refs": [
+            "bucket_7b",
+            "bucket_13b",
+            "bucket_34b",
+            "bucket_70b"
+          ],
+          "allowed_gpu_counts": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "price_per_gpu_hour_usd": 1.89,
+          "price_per_1m_tokens_usd": null,
+          "tps_cap": null,
+          "region": "global",
+          "notes": "Starting price per hour",
+          "confidence": "vendor_listed"
+        },
+        {
+          "offering_id": "fal_ai_h200_serverless",
+          "billing_mode": "autoscale_hourly",
+          "gpu_type": "h200_serverless",
+          "model_refs": [
+            "bucket_7b",
+            "bucket_13b",
+            "bucket_34b",
+            "bucket_70b"
+          ],
+          "allowed_gpu_counts": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "price_per_gpu_hour_usd": 2.1,
+          "price_per_1m_tokens_usd": null,
+          "tps_cap": null,
+          "region": "global",
+          "notes": "High VRAM serverless",
+          "confidence": "vendor_listed"
+        },
+        {
+          "offering_id": "fal_ai_a100_serverless",
+          "billing_mode": "autoscale_hourly",
+          "gpu_type": "a100_serverless",
+          "model_refs": [
+            "bucket_7b",
+            "bucket_13b"
+          ],
+          "allowed_gpu_counts": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "price_per_gpu_hour_usd": 0.99,
+          "price_per_1m_tokens_usd": null,
+          "tps_cap": null,
+          "region": "global",
+          "notes": "Cost-effective GPU option",
+          "confidence": "vendor_listed"
+        }
+      ]
+    },
+    {
+      "provider_id": "fireworks",
+      "provider_name": "Fireworks",
+      "offerings": [
+        {
+          "offering_id": "fireworks_deepseek_v3_input",
+          "billing_mode": "per_token",
+          "gpu_type": null,
+          "model_refs": [
+            "deepseek_v3"
+          ],
+          "allowed_gpu_counts": [],
+          "price_per_gpu_hour_usd": null,
+          "price_per_1m_tokens_usd": 0.56,
+          "tps_cap": null,
+          "region": "global",
+          "notes": "Input tokens",
+          "confidence": "vendor_listed"
+        },
+        {
+          "offering_id": "fireworks_deepseek_v3_output",
+          "billing_mode": "per_token",
+          "gpu_type": null,
+          "model_refs": [
+            "deepseek_v3"
+          ],
+          "allowed_gpu_counts": [],
+          "price_per_gpu_hour_usd": null,
+          "price_per_1m_tokens_usd": 1.68,
+          "tps_cap": null,
+          "region": "global",
+          "notes": "Output tokens",
+          "confidence": "vendor_listed"
+        },
+        {
+          "offering_id": "fireworks_glm_5_input",
+          "billing_mode": "per_token",
+          "gpu_type": null,
+          "model_refs": [
+            "glm_5"
+          ],
+          "allowed_gpu_counts": [],
+          "price_per_gpu_hour_usd": null,
+          "price_per_1m_tokens_usd": 1.0,
+          "tps_cap": null,
+          "region": "global",
+          "notes": "Input tokens",
+          "confidence": "vendor_listed"
+        },
+        {
+          "offering_id": "fireworks_glm_5_output",
+          "billing_mode": "per_token",
+          "gpu_type": null,
+          "model_refs": [
+            "glm_5"
+          ],
+          "allowed_gpu_counts": [],
+          "price_per_gpu_hour_usd": null,
+          "price_per_1m_tokens_usd": 3.2,
+          "tps_cap": null,
+          "region": "global",
+          "notes": "Output tokens",
+          "confidence": "vendor_listed"
+        },
+        {
+          "offering_id": "fireworks_small_models",
+          "billing_mode": "per_token",
+          "gpu_type": null,
+          "model_refs": [
+            "small_models"
+          ],
+          "allowed_gpu_counts": [],
+          "price_per_gpu_hour_usd": null,
+          "price_per_1m_tokens_usd": 0.1,
+          "tps_cap": null,
+          "region": "global",
+          "notes": "Sub-4B parameter models",
+          "confidence": "vendor_listed"
+        },
+        {
+          "offering_id": "fireworks_medium_models",
+          "billing_mode": "per_token",
+          "gpu_type": null,
+          "model_refs": [
+            "medium_models"
+          ],
+          "allowed_gpu_counts": [],
+          "price_per_gpu_hour_usd": null,
+          "price_per_1m_tokens_usd": 0.2,
+          "tps_cap": null,
+          "region": "global",
+          "notes": "4-16B parameter models",
+          "confidence": "vendor_listed"
+        },
+        {
+          "offering_id": "fireworks_large_models",
+          "billing_mode": "per_token",
+          "gpu_type": null,
+          "model_refs": [
+            "large_models"
+          ],
+          "allowed_gpu_counts": [],
+          "price_per_gpu_hour_usd": null,
+          "price_per_1m_tokens_usd": 0.9,
+          "tps_cap": null,
+          "region": "global",
+          "notes": "16B+ parameter models",
+          "confidence": "vendor_listed"
+        }
+      ]
+    },
+    {
+      "provider_id": "modal",
+      "provider_name": "Modal",
+      "offerings": [
+        {
+          "offering_id": "modal_h100_gpu",
+          "billing_mode": "dedicated_hourly",
+          "gpu_type": "h100_gpu",
+          "model_refs": [
+            "bucket_7b",
+            "bucket_13b",
+            "bucket_34b",
+            "bucket_70b"
+          ],
+          "allowed_gpu_counts": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "price_per_gpu_hour_usd": 3.9492,
+          "price_per_1m_tokens_usd": null,
+          "tps_cap": null,
+          "region": "global",
+          "notes": "Converted from $0.001097/sec",
+          "confidence": "vendor_listed"
+        },
+        {
+          "offering_id": "modal_a100_80gb",
+          "billing_mode": "dedicated_hourly",
+          "gpu_type": "a100_80gb",
+          "model_refs": [
+            "bucket_7b",
+            "bucket_13b",
+            "bucket_34b",
+            "bucket_70b"
+          ],
+          "allowed_gpu_counts": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "price_per_gpu_hour_usd": 2.4984,
+          "price_per_1m_tokens_usd": null,
+          "tps_cap": null,
+          "region": "global",
+          "notes": "Converted from $0.000694/sec",
+          "confidence": "vendor_listed"
+        },
+        {
+          "offering_id": "modal_a100_40gb",
+          "billing_mode": "dedicated_hourly",
+          "gpu_type": "a100_40gb",
+          "model_refs": [
+            "bucket_7b",
+            "bucket_13b"
+          ],
+          "allowed_gpu_counts": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "price_per_gpu_hour_usd": 2.0988,
+          "price_per_1m_tokens_usd": null,
+          "tps_cap": null,
+          "region": "global",
+          "notes": "Converted from $0.000583/sec",
+          "confidence": "vendor_listed"
+        },
+        {
+          "offering_id": "modal_l40s",
+          "billing_mode": "dedicated_hourly",
+          "gpu_type": "l40s",
+          "model_refs": [
+            "bucket_7b",
+            "bucket_13b",
+            "bucket_34b"
+          ],
+          "allowed_gpu_counts": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "price_per_gpu_hour_usd": 1.9512,
+          "price_per_1m_tokens_usd": null,
+          "tps_cap": null,
+          "region": "global",
+          "notes": "Converted from $0.000542/sec",
+          "confidence": "vendor_listed"
+        },
+        {
+          "offering_id": "modal_a10",
+          "billing_mode": "dedicated_hourly",
+          "gpu_type": "a10",
+          "model_refs": [
+            "bucket_7b",
+            "bucket_13b"
+          ],
+          "allowed_gpu_counts": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "price_per_gpu_hour_usd": 1.1016,
+          "price_per_1m_tokens_usd": null,
+          "tps_cap": null,
+          "region": "global",
+          "notes": "Converted from $0.000306/sec",
+          "confidence": "vendor_listed"
+        },
+        {
+          "offering_id": "modal_t4",
+          "billing_mode": "dedicated_hourly",
+          "gpu_type": "t4",
+          "model_refs": [
+            "bucket_7b"
+          ],
+          "allowed_gpu_counts": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "price_per_gpu_hour_usd": 0.5904,
+          "price_per_1m_tokens_usd": null,
+          "tps_cap": null,
+          "region": "global",
+          "notes": "Converted from $0.000164/sec",
+          "confidence": "vendor_listed"
+        }
+      ]
+    },
+    {
+      "provider_id": "openai",
+      "provider_name": "Openai",
+      "offerings": [
+        {
+          "offering_id": "openai_gpt_4o_input",
+          "billing_mode": "per_token",
+          "gpu_type": null,
+          "model_refs": [
+            "gpt_4o"
+          ],
+          "allowed_gpu_counts": [],
+          "price_per_gpu_hour_usd": null,
+          "price_per_1m_tokens_usd": 5.0,
+          "tps_cap": null,
+          "region": "global",
+          "notes": "Input tokens",
+          "confidence": "vendor_listed"
+        },
+        {
+          "offering_id": "openai_gpt_4o_output",
+          "billing_mode": "per_token",
+          "gpu_type": null,
+          "model_refs": [
+            "gpt_4o"
+          ],
+          "allowed_gpu_counts": [],
+          "price_per_gpu_hour_usd": null,
+          "price_per_1m_tokens_usd": 15.0,
+          "tps_cap": null,
+          "region": "global",
+          "notes": "Output tokens",
+          "confidence": "vendor_listed"
+        },
+        {
+          "offering_id": "openai_gpt_4o_mini_input",
+          "billing_mode": "per_token",
+          "gpu_type": null,
+          "model_refs": [
+            "gpt_4o_mini"
+          ],
+          "allowed_gpu_counts": [],
+          "price_per_gpu_hour_usd": null,
+          "price_per_1m_tokens_usd": 0.15,
+          "tps_cap": null,
+          "region": "global",
+          "notes": "Input tokens",
+          "confidence": "vendor_listed"
+        },
+        {
+          "offering_id": "openai_gpt_4o_mini_output",
+          "billing_mode": "per_token",
+          "gpu_type": null,
+          "model_refs": [
+            "gpt_4o_mini"
+          ],
+          "allowed_gpu_counts": [],
+          "price_per_gpu_hour_usd": null,
+          "price_per_1m_tokens_usd": 0.6,
+          "tps_cap": null,
+          "region": "global",
+          "notes": "Output tokens",
+          "confidence": "vendor_listed"
+        },
+        {
+          "offering_id": "openai_gpt_5_input",
+          "billing_mode": "per_token",
+          "gpu_type": null,
+          "model_refs": [
+            "gpt_5"
+          ],
+          "allowed_gpu_counts": [],
+          "price_per_gpu_hour_usd": null,
+          "price_per_1m_tokens_usd": 1.25,
+          "tps_cap": null,
+          "region": "global",
+          "notes": "Input tokens",
+          "confidence": "vendor_listed"
+        },
+        {
+          "offering_id": "openai_gpt_5_output",
+          "billing_mode": "per_token",
+          "gpu_type": null,
+          "model_refs": [
+            "gpt_5"
+          ],
+          "allowed_gpu_counts": [],
+          "price_per_gpu_hour_usd": null,
+          "price_per_1m_tokens_usd": 10.0,
+          "tps_cap": null,
+          "region": "global",
+          "notes": "Output tokens",
+          "confidence": "vendor_listed"
+        }
+      ]
+    },
+    {
+      "provider_id": "replicate",
+      "provider_name": "Replicate",
+      "offerings": [
+        {
+          "offering_id": "replicate_a100_80gb",
+          "billing_mode": "dedicated_hourly",
+          "gpu_type": "a100_80gb",
+          "model_refs": [
+            "bucket_7b",
+            "bucket_13b",
+            "bucket_34b",
+            "bucket_70b"
+          ],
+          "allowed_gpu_counts": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "price_per_gpu_hour_usd": 5.04,
+          "price_per_1m_tokens_usd": null,
+          "tps_cap": null,
+          "region": "global",
+          "notes": "Billed by second on-demand",
+          "confidence": "vendor_listed"
+        },
+        {
+          "offering_id": "replicate_h100_sxm",
+          "billing_mode": "dedicated_hourly",
+          "gpu_type": "h100_sxm",
+          "model_refs": [
+            "bucket_7b",
+            "bucket_13b",
+            "bucket_34b",
+            "bucket_70b"
+          ],
+          "allowed_gpu_counts": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "price_per_gpu_hour_usd": 5.94,
+          "price_per_1m_tokens_usd": null,
+          "tps_cap": null,
+          "region": "global",
+          "notes": "On-demand per-second billing",
+          "confidence": "vendor_listed"
+        },
+        {
+          "offering_id": "replicate_l40s",
+          "billing_mode": "dedicated_hourly",
+          "gpu_type": "l40s",
+          "model_refs": [
+            "bucket_7b",
+            "bucket_13b",
+            "bucket_34b"
+          ],
+          "allowed_gpu_counts": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "price_per_gpu_hour_usd": 3.24,
+          "price_per_1m_tokens_usd": null,
+          "tps_cap": null,
+          "region": "global",
+          "notes": "Mid-tier GPU pricing",
+          "confidence": "vendor_listed"
+        },
+        {
+          "offering_id": "replicate_t4",
+          "billing_mode": "dedicated_hourly",
+          "gpu_type": "t4",
+          "model_refs": [
+            "bucket_7b"
+          ],
+          "allowed_gpu_counts": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "price_per_gpu_hour_usd": 0.54,
+          "price_per_1m_tokens_usd": null,
+          "tps_cap": null,
+          "region": "global",
+          "notes": "Entry-level GPU",
+          "confidence": "vendor_listed"
+        }
+      ]
+    },
+    {
+      "provider_id": "runpod",
+      "provider_name": "Runpod",
+      "offerings": [
+        {
+          "offering_id": "runpod_h100_sxm_secure",
+          "billing_mode": "dedicated_hourly",
+          "gpu_type": "h100_sxm_secure",
+          "model_refs": [
+            "bucket_7b",
+            "bucket_13b",
+            "bucket_34b",
+            "bucket_70b"
+          ],
+          "allowed_gpu_counts": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "price_per_gpu_hour_usd": 2.69,
+          "price_per_1m_tokens_usd": null,
+          "tps_cap": null,
+          "region": "global",
+          "notes": "Secure Cloud pricing",
+          "confidence": "vendor_listed"
+        },
+        {
+          "offering_id": "runpod_a100_sxm_80gb_secure",
+          "billing_mode": "dedicated_hourly",
+          "gpu_type": "a100_sxm_80gb_secure",
+          "model_refs": [
+            "bucket_7b",
+            "bucket_13b",
+            "bucket_34b",
+            "bucket_70b"
+          ],
+          "allowed_gpu_counts": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "price_per_gpu_hour_usd": 1.64,
+          "price_per_1m_tokens_usd": null,
+          "tps_cap": null,
+          "region": "global",
+          "notes": "Secure Cloud pricing",
+          "confidence": "vendor_listed"
+        },
+        {
+          "offering_id": "runpod_rtx_a5000_secure",
+          "billing_mode": "dedicated_hourly",
+          "gpu_type": "rtx_a5000_secure",
+          "model_refs": [
+            "bucket_7b",
+            "bucket_13b"
+          ],
+          "allowed_gpu_counts": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "price_per_gpu_hour_usd": 0.29,
+          "price_per_1m_tokens_usd": null,
+          "tps_cap": null,
+          "region": "global",
+          "notes": "Secure Cloud mid-tier",
+          "confidence": "vendor_listed"
+        },
+        {
+          "offering_id": "runpod_rtx_3090_secure",
+          "billing_mode": "dedicated_hourly",
+          "gpu_type": "rtx_3090_secure",
+          "model_refs": [
+            "bucket_7b",
+            "bucket_13b"
+          ],
+          "allowed_gpu_counts": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "price_per_gpu_hour_usd": 0.43,
+          "price_per_1m_tokens_usd": null,
+          "tps_cap": null,
+          "region": "global",
+          "notes": "Secure Cloud popular GPU",
+          "confidence": "vendor_listed"
+        },
+        {
+          "offering_id": "runpod_rtx_3090_community",
+          "billing_mode": "dedicated_hourly",
+          "gpu_type": "rtx_3090_community",
+          "model_refs": [
+            "bucket_7b",
+            "bucket_13b"
+          ],
+          "allowed_gpu_counts": [
+            1,
+            2,
+            4,
+            8
+          ],
+          "price_per_gpu_hour_usd": 0.22,
+          "price_per_1m_tokens_usd": null,
+          "tps_cap": null,
+          "region": "global",
+          "notes": "Community Cloud discount",
+          "confidence": "vendor_listed"
+        }
+      ]
+    },
+    {
+      "provider_id": "together_ai",
+      "provider_name": "Together AI",
+      "offerings": [
+        {
+          "offering_id": "together_ai_llama_4_maverick_input",
+          "billing_mode": "per_token",
+          "gpu_type": null,
+          "model_refs": [
+            "llama_4_maverick"
+          ],
+          "allowed_gpu_counts": [],
+          "price_per_gpu_hour_usd": null,
+          "price_per_1m_tokens_usd": 0.27,
+          "tps_cap": null,
+          "region": "global",
+          "notes": "Input tokens",
+          "confidence": "vendor_listed"
+        },
+        {
+          "offering_id": "together_ai_llama_4_maverick_output",
+          "billing_mode": "per_token",
+          "gpu_type": null,
+          "model_refs": [
+            "llama_4_maverick"
+          ],
+          "allowed_gpu_counts": [],
+          "price_per_gpu_hour_usd": null,
+          "price_per_1m_tokens_usd": 0.85,
+          "tps_cap": null,
+          "region": "global",
+          "notes": "Output tokens",
+          "confidence": "vendor_listed"
+        },
+        {
+          "offering_id": "together_ai_deepseek_r1_input",
+          "billing_mode": "per_token",
+          "gpu_type": null,
+          "model_refs": [
+            "deepseek_r1"
+          ],
+          "allowed_gpu_counts": [],
+          "price_per_gpu_hour_usd": null,
+          "price_per_1m_tokens_usd": 3.0,
+          "tps_cap": null,
+          "region": "global",
+          "notes": "Input tokens",
+          "confidence": "vendor_listed"
+        },
+        {
+          "offering_id": "together_ai_deepseek_r1_output",
+          "billing_mode": "per_token",
+          "gpu_type": null,
+          "model_refs": [
+            "deepseek_r1"
+          ],
+          "allowed_gpu_counts": [],
+          "price_per_gpu_hour_usd": null,
+          "price_per_1m_tokens_usd": 7.0,
+          "tps_cap": null,
+          "region": "global",
+          "notes": "Output tokens",
+          "confidence": "vendor_listed"
+        },
+        {
+          "offering_id": "together_ai_deepseek_v31_input",
+          "billing_mode": "per_token",
+          "gpu_type": null,
+          "model_refs": [
+            "deepseek_v3_1"
+          ],
+          "allowed_gpu_counts": [],
+          "price_per_gpu_hour_usd": null,
+          "price_per_1m_tokens_usd": 0.6,
+          "tps_cap": null,
+          "region": "global",
+          "notes": "Input tokens",
+          "confidence": "vendor_listed"
+        },
+        {
+          "offering_id": "together_ai_deepseek_v31_output",
+          "billing_mode": "per_token",
+          "gpu_type": null,
+          "model_refs": [
+            "deepseek_v3_1"
+          ],
+          "allowed_gpu_counts": [],
+          "price_per_gpu_hour_usd": null,
+          "price_per_1m_tokens_usd": 1.7,
+          "tps_cap": null,
+          "region": "global",
+          "notes": "Output tokens",
+          "confidence": "vendor_listed"
+        },
+        {
+          "offering_id": "together_ai_gpt_oss_120b_input",
+          "billing_mode": "per_token",
+          "gpu_type": null,
+          "model_refs": [
+            "gpt_oss_120b"
+          ],
+          "allowed_gpu_counts": [],
+          "price_per_gpu_hour_usd": null,
+          "price_per_1m_tokens_usd": 0.15,
+          "tps_cap": null,
+          "region": "global",
+          "notes": "Input tokens",
+          "confidence": "vendor_listed"
+        },
+        {
+          "offering_id": "together_ai_gpt_oss_120b_output",
+          "billing_mode": "per_token",
+          "gpu_type": null,
+          "model_refs": [
+            "gpt_oss_120b"
+          ],
+          "allowed_gpu_counts": [],
+          "price_per_gpu_hour_usd": null,
+          "price_per_1m_tokens_usd": 0.6,
+          "tps_cap": null,
+          "region": "global",
+          "notes": "Output tokens",
+          "confidence": "vendor_listed"
+        },
+        {
+          "offering_id": "together_ai_llama_33_70b",
+          "billing_mode": "per_token",
+          "gpu_type": null,
+          "model_refs": [
+            "llama_3_3_70b"
+          ],
+          "allowed_gpu_counts": [],
+          "price_per_gpu_hour_usd": null,
+          "price_per_1m_tokens_usd": 0.88,
+          "tps_cap": null,
+          "region": "global",
+          "notes": "Input and output same price",
+          "confidence": "vendor_listed"
+        },
+        {
+          "offering_id": "together_ai_qwen3_coder_next_input",
+          "billing_mode": "per_token",
+          "gpu_type": null,
+          "model_refs": [
+            "qwen3_coder_next"
+          ],
+          "allowed_gpu_counts": [],
+          "price_per_gpu_hour_usd": null,
+          "price_per_1m_tokens_usd": 0.5,
+          "tps_cap": null,
+          "region": "global",
+          "notes": "Input tokens",
+          "confidence": "vendor_listed"
+        },
+        {
+          "offering_id": "together_ai_qwen3_coder_next_output",
+          "billing_mode": "per_token",
+          "gpu_type": null,
+          "model_refs": [
+            "qwen3_coder_next"
+          ],
+          "allowed_gpu_counts": [],
+          "price_per_gpu_hour_usd": null,
+          "price_per_1m_tokens_usd": 1.2,
+          "tps_cap": null,
+          "region": "global",
+          "notes": "Output tokens",
+          "confidence": "vendor_listed"
+        }
+      ]
+    }
+  ]
+}

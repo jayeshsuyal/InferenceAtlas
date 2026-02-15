@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import os
+
 import streamlit as st
 
-from inference_atlas import get_recommendations
+from inference_atlas import get_mvp_catalog, get_recommendations, rank_configs
 from inference_atlas.data_loader import get_models
 from inference_atlas.llm import LLMRouter, WorkloadSpec
 
@@ -15,6 +17,7 @@ st.caption("Multi-GPU scaling + cost optimization for LLM deployments")
 
 # Load model catalog
 MODEL_REQUIREMENTS = get_models()
+has_llm_key = bool(os.getenv("OPENAI_API_KEY") or os.getenv("ANTHROPIC_API_KEY"))
 
 with st.expander("Or describe your workload in plain English"):
     user_text = st.text_area(
@@ -27,6 +30,9 @@ with st.expander("Or describe your workload in plain English"):
         key="ai_parse_input_text",
     )
     if st.button("Parse with AI"):
+        if not has_llm_key:
+            st.error("Set OPENAI_API_KEY or ANTHROPIC_API_KEY to use AI parsing.")
+            st.stop()
         try:
             router = LLMRouter()
             parsed = router.parse_workload(user_text)
@@ -116,52 +122,157 @@ if submit:
     except ValueError as exc:
         st.error(str(exc))
         recommendations = []
+    st.session_state["last_recommendations"] = recommendations
 
-    if recommendations:
-        st.subheader("Top 3 Recommendations")
-        for rec in recommendations:
-            with st.container():
-                col1, col2 = st.columns([3, 1])
+last_recommendations = st.session_state.get("last_recommendations", [])
+last_workload = st.session_state.get("last_workload")
+if last_recommendations:
+    st.subheader("Top 3 Recommendations")
+    for rec in last_recommendations:
+        with st.container():
+            col1, col2 = st.columns([3, 1])
 
-                with col1:
-                    st.markdown(f"### {rec.rank}. {rec.platform} - {rec.option}")
-                    st.caption(rec.reasoning)
+            with col1:
+                st.markdown(f"### {rec.rank}. {rec.platform} - {rec.option}")
+                st.caption(rec.reasoning)
 
-                with col2:
-                    st.metric("Monthly Cost", f"${rec.monthly_cost_usd:,.0f}")
-                    st.metric("Cost/1M Tokens", f"${rec.cost_per_million_tokens:.2f}")
+            with col2:
+                st.metric("Monthly Cost", f"${rec.monthly_cost_usd:,.0f}")
+                st.metric("Cost/1M Tokens", f"${rec.cost_per_million_tokens:.2f}")
 
-                if rec.utilization_pct < 60:
-                    util_label = "Low"
-                elif rec.utilization_pct < 80:
-                    util_label = "Moderate"
-                else:
-                    util_label = "High"
-                st.progress(
-                    min(max(rec.utilization_pct / 100, 0.0), 1.0),
-                    text=f"{util_label} utilization: {rec.utilization_pct:.0f}%",
+            if rec.utilization_pct < 60:
+                util_label = "Low"
+            elif rec.utilization_pct < 80:
+                util_label = "Moderate"
+            else:
+                util_label = "High"
+            st.progress(min(max(rec.utilization_pct / 100, 0.0), 1.0))
+            st.caption(f"{util_label} utilization: {rec.utilization_pct:.0f}%")
+
+            if rec.idle_waste_pct > 40:
+                potential_savings = rec.monthly_cost_usd * rec.idle_waste_pct / 100
+                st.warning(
+                    f"{rec.idle_waste_pct:.0f}% idle capacity. "
+                    f"Consider autoscaling to save about ${potential_savings:,.0f}/mo."
                 )
 
-                if rec.idle_waste_pct > 40:
-                    potential_savings = rec.monthly_cost_usd * rec.idle_waste_pct / 100
-                    st.warning(
-                        f"{rec.idle_waste_pct:.0f}% idle capacity. "
-                        f"Consider autoscaling to save about ${potential_savings:,.0f}/mo."
-                    )
+            st.markdown("---")
 
-                st.divider()
-        if st.button("Explain this recommendation"):
+    explain_disabled = (not has_llm_key) or (last_workload is None)
+    if st.button("Explain this recommendation", disabled=explain_disabled):
+        if not has_llm_key:
+            st.error("Set OPENAI_API_KEY or ANTHROPIC_API_KEY to use AI explanations.")
+        elif last_workload is None:
+            st.error("Run recommendations first to generate an explanation.")
+        else:
             try:
                 router = LLMRouter()
-                top_rec = recommendations[0]
+                top_rec = last_recommendations[0]
                 summary = (
                     f"{top_rec.platform} - {top_rec.option}, "
                     f"${top_rec.monthly_cost_usd:.0f}/mo, "
                     f"{top_rec.utilization_pct:.0f}% util"
                 )
-                explanation = router.explain(summary, effective_workload)
+                explanation = router.explain(summary, last_workload)
+                st.session_state["last_explanation"] = explanation
                 st.info(explanation)
             except Exception as exc:  # noqa: BLE001 - user-facing parser message
                 st.error(f"Explanation failed: {exc}")
+    if st.session_state.get("last_explanation"):
+        st.info(st.session_state["last_explanation"])
 else:
     st.info("Enter workload details and click Get Recommendations.")
+
+st.markdown("---")
+st.subheader("MVP Planner (Schema-Validated Catalogs)")
+st.caption("Capacity-first ranking with workload normalization, risk scoring, and cost-adjusted score.")
+
+try:
+    mvp_models = get_mvp_catalog("models")["models"]
+    bucket_options = sorted({model["size_bucket"] for model in mvp_models if model["size_bucket"] != "other"})
+except Exception as exc:  # noqa: BLE001 - user-facing catalog error
+    st.error(f"Failed to load MVP catalogs: {exc}")
+    bucket_options = ["70b"]
+
+with st.form("mvp_planner_inputs"):
+    mvp_tokens_day = st.number_input(
+        "MVP Traffic (tokens/day)",
+        min_value=1.0,
+        value=8_000_000.0,
+        step=100_000.0,
+    )
+    mvp_peak_to_avg = st.number_input(
+        "Peak-to-average",
+        min_value=1.0,
+        value=2.5,
+        step=0.1,
+    )
+    mvp_model_bucket = st.selectbox(
+        "Model bucket",
+        options=bucket_options,
+        index=bucket_options.index("70b") if "70b" in bucket_options else 0,
+    )
+    mvp_top_k = st.slider("Top K", min_value=1, max_value=10, value=5)
+
+    with st.expander("Advanced assumptions"):
+        mvp_util_target = st.slider("Util target", min_value=0.50, max_value=0.90, value=0.75, step=0.01)
+        mvp_beta = st.slider("Scaling beta", min_value=0.01, max_value=0.20, value=0.08, step=0.01)
+        mvp_alpha = st.slider("Risk alpha", min_value=0.0, max_value=2.0, value=1.0, step=0.1)
+        mvp_autoscale_ineff = st.slider(
+            "Autoscale inefficiency",
+            min_value=1.0,
+            max_value=1.5,
+            value=1.15,
+            step=0.01,
+        )
+
+    mvp_submit = st.form_submit_button("Run MVP Planner")
+
+if mvp_submit:
+    try:
+        mvp_plans = rank_configs(
+            tokens_per_day=float(mvp_tokens_day),
+            model_bucket=mvp_model_bucket,
+            peak_to_avg=float(mvp_peak_to_avg),
+            util_target=float(mvp_util_target),
+            beta=float(mvp_beta),
+            alpha=float(mvp_alpha),
+            autoscale_inefficiency=float(mvp_autoscale_ineff),
+            top_k=int(mvp_top_k),
+        )
+        st.session_state["mvp_plans"] = mvp_plans
+    except Exception as exc:  # noqa: BLE001 - user-facing planner message
+        st.error(f"MVP planner failed: {exc}")
+        st.session_state["mvp_plans"] = []
+
+mvp_plans = st.session_state.get("mvp_plans", [])
+if mvp_plans:
+    table_rows = []
+    for plan in mvp_plans:
+        table_rows.append(
+            {
+                "rank": plan.rank,
+                "provider": plan.provider_id,
+                "billing": plan.billing_mode,
+                "gpu": plan.gpu_type or "-",
+                "gpus": plan.gpu_count,
+                "monthly_usd": round(plan.monthly_cost_usd, 2),
+                "score": round(plan.score, 2),
+                "risk": round(plan.risk.total_risk, 3),
+                "headroom_pct": round(plan.headroom_pct, 1) if plan.headroom_pct is not None else None,
+            }
+        )
+    st.dataframe(table_rows, use_container_width=True, hide_index=True)
+
+    st.markdown("**Top Explanations**")
+    for plan in mvp_plans[:3]:
+        with st.container():
+            st.markdown(
+                f"**{plan.rank}. {plan.provider_name}**  \n"
+                f"`{plan.billing_mode}` | `gpu={plan.gpu_type or '-'}` | `count={plan.gpu_count}`"
+            )
+            st.caption(plan.why)
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Monthly Cost", f"${plan.monthly_cost_usd:,.0f}")
+            col2.metric("Score", f"{plan.score:,.1f}")
+            col3.metric("Risk", f"{plan.risk.total_risk:.2f}")

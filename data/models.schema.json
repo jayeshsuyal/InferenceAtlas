@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://inference-atlas.local/schemas/models.schema.json",
+  "title": "InferenceAtlas Models",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "models"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "models": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "model_id",
+          "model_name",
+          "family",
+          "size_bucket",
+          "multiplier_knobs"
+        ],
+        "properties": {
+          "model_id": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+$"
+          },
+          "model_name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "family": {
+            "type": "string",
+            "minLength": 1
+          },
+          "size_bucket": {
+            "type": "string",
+            "enum": [
+              "7b",
+              "13b",
+              "34b",
+              "70b",
+              "405b",
+              "other"
+            ]
+          },
+          "default_context_len": {
+            "type": "integer",
+            "minimum": 1024
+          },
+          "multiplier_knobs": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "quantization_factor",
+              "long_context_penalty"
+            ],
+            "properties": {
+              "quantization_factor": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              "long_context_penalty": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              }
+            }
+          },
+          "notes": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

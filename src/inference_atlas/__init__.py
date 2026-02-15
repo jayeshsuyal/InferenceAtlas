@@ -14,7 +14,16 @@ from inference_atlas.cost_model import (
     calculate_gpu_monthly_cost,
     calculate_per_token_monthly_cost,
 )
-from inference_atlas.data_loader import get_model_display_name, get_models, get_platforms
+from inference_atlas.data_loader import (
+    get_mvp_catalog,
+    get_model_display_name,
+    get_models,
+    get_platforms,
+    get_pricing_by_workload,
+    get_pricing_records,
+    validate_mvp_catalogs,
+    validate_pricing_datasets,
+)
 from inference_atlas.llm import (
     GPT52Adapter,
     LLMAdapter,
@@ -25,6 +34,19 @@ from inference_atlas.llm import (
     WorkloadSpec,
     parse_workload_text,
     validate_workload_payload,
+)
+from inference_atlas.mvp_planner import (
+    CapacityEstimate,
+    NormalizedWorkload,
+    PlannerConfig,
+    RankedPlan,
+    RiskBreakdown,
+    capacity,
+    compute_monthly_cost,
+    enumerate_configs,
+    normalize_workload,
+    rank_configs,
+    risk_score,
 )
 from inference_atlas.recommender import Recommendation, compute_penalty, get_recommendations
 from inference_atlas.scaling import (
@@ -56,6 +78,23 @@ __all__ = [
     "get_platforms",
     "get_models",
     "get_model_display_name",
+    "get_pricing_records",
+    "get_pricing_by_workload",
+    "validate_pricing_datasets",
+    "validate_mvp_catalogs",
+    "get_mvp_catalog",
+    # MVP planner
+    "normalize_workload",
+    "capacity",
+    "enumerate_configs",
+    "compute_monthly_cost",
+    "risk_score",
+    "rank_configs",
+    "NormalizedWorkload",
+    "CapacityEstimate",
+    "PlannerConfig",
+    "RiskBreakdown",
+    "RankedPlan",
     # LLM adapter layer
     "LLMAdapter",
     "GPT52Adapter",
