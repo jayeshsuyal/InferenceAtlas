@@ -6,7 +6,7 @@ Supports multi-GPU scaling, traffic pattern modeling, and cross-platform cost co
 
 from __future__ import annotations
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 # Public API exports
 from inference_atlas.cost_model import (
