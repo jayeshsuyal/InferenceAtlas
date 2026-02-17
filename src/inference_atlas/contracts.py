@@ -46,6 +46,18 @@ class ConfidenceLevel(str, Enum):
             "vendor_list": 1,
         }[self.value]
 
+    @property
+    def price_penalty_multiplier(self) -> float:
+        """Multiplier used when confidence-weighted ranking is enabled."""
+        return {
+            "high": 1.00,
+            "official": 1.00,
+            "medium": 1.10,
+            "estimated": 1.10,
+            "low": 1.25,
+            "vendor_list": 1.25,
+        }[self.value]
+
 
 class ModelBucket(str, Enum):
     """Model size buckets for capacity planning.

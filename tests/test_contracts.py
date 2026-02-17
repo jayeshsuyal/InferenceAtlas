@@ -45,6 +45,16 @@ def test_confidence_level_numeric_ordering() -> None:
     assert ConfidenceLevel.VENDOR_LIST.score == 1  # Alias
 
 
+def test_confidence_level_price_penalty_multipliers() -> None:
+    """Confidence levels expose stable price penalty multipliers."""
+    assert ConfidenceLevel.HIGH.price_penalty_multiplier == 1.00
+    assert ConfidenceLevel.OFFICIAL.price_penalty_multiplier == 1.00
+    assert ConfidenceLevel.MEDIUM.price_penalty_multiplier == 1.10
+    assert ConfidenceLevel.ESTIMATED.price_penalty_multiplier == 1.10
+    assert ConfidenceLevel.LOW.price_penalty_multiplier == 1.25
+    assert ConfidenceLevel.VENDOR_LIST.price_penalty_multiplier == 1.25
+
+
 def test_model_bucket_enum_values() -> None:
     """Model bucket enum has all expected size buckets."""
     assert ModelBucket.BUCKET_7B.value == "7b"

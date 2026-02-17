@@ -15,6 +15,7 @@ from inference_atlas import (
     get_provider_compatibility,
     rank_configs,
 )
+from inference_atlas.contracts import ConfidenceLevel
 from inference_atlas.config import TRAFFIC_PATTERN_LABELS, TRAFFIC_PATTERN_PEAK_TO_AVG_DEFAULT
 from inference_atlas.data_loader import get_catalog_v2_metadata, get_models
 from inference_atlas.llm import LLMRouter, RouterConfig, WorkloadSpec
@@ -28,15 +29,6 @@ MODEL_REQUIREMENTS = get_models()
 has_llm_key = bool(os.getenv("OPENAI_API_KEY") or os.getenv("ANTHROPIC_API_KEY"))
 
 label_to_pattern = {label: token for token, label in TRAFFIC_PATTERN_LABELS.items()}
-
-CONFIDENCE_MULTIPLIER = {
-    "high": 1.00,
-    "official": 1.00,
-    "medium": 1.10,
-    "estimated": 1.10,
-    "low": 1.25,
-    "vendor_list": 1.25,
-}
 
 
 def _get_ask_ia_router() -> LLMRouter:
@@ -123,7 +115,7 @@ def _rank_catalog_offers(
             if effective_price is None:
                 continue
             if confidence_weighted:
-                effective_price *= CONFIDENCE_MULTIPLIER.get(str(row.confidence).lower(), 1.30)
+                effective_price *= _confidence_multiplier(row.confidence)
             if monthly_budget_max_usd > 0 and effective_price > monthly_budget_max_usd:
                 continue
 
@@ -197,6 +189,14 @@ def _normalize_unit_price_for_workload(
         return unit_price_usd if unit == "1k_images" else None
 
     return None
+
+
+def _confidence_multiplier(confidence: str) -> float:
+    token = str(confidence).strip().lower()
+    try:
+        return ConfidenceLevel(token).price_penalty_multiplier
+    except ValueError:
+        return 1.30
 
 
 def _build_ai_context_workload() -> WorkloadSpec:
@@ -429,21 +429,8 @@ with opt_tab:
         )
         available_units = sorted({row.unit_name for row in workload_rows})
         with st.form("optimize_non_llm"):
-            comparator_mode = st.selectbox(
-                "Comparator",
-                options=["normalized", "raw"],
-                format_func=lambda value: (
-                    "Normalized workload comparator (recommended)"
-                    if value == "normalized"
-                    else "Raw listed unit price"
-                ),
-                help="Normalized comparator ranks only offers with workload-comparable units.",
-            )
-            confidence_weighted = st.checkbox(
-                "Confidence-weighted ranking",
-                value=True,
-                help="Apply a penalty to lower-confidence data before ranking.",
-            )
+            comparator_mode = "normalized"
+            confidence_weighted = True
             selected_unit = st.selectbox(
                 "Unit filter",
                 options=["All units", *available_units],
@@ -462,6 +449,22 @@ with opt_tab:
                 value=0.0,
                 step=100.0,
             )
+            with st.expander("Advanced options", expanded=False):
+                comparator_mode = st.selectbox(
+                    "Comparator",
+                    options=["normalized", "raw"],
+                    format_func=lambda value: (
+                        "Normalized workload comparator (recommended)"
+                        if value == "normalized"
+                        else "Raw listed unit price"
+                    ),
+                    help="Normalized comparator ranks only offers with workload-comparable units.",
+                )
+                confidence_weighted = st.checkbox(
+                    "Confidence-weighted ranking",
+                    value=True,
+                    help="Apply a penalty to lower-confidence data before ranking.",
+                )
             non_llm_submit = st.form_submit_button("Get Top 10 Offers")
 
         if non_llm_submit:
@@ -602,46 +605,43 @@ with opt_tab:
                             f"{row.provider_id} ({row.reason})" for row in incompatible_filtered
                         )
                     )
-                diagnostics = []
-                selected_set = set(selected_global_providers)
-                selected_compatible_set = set(compatible_filtered)
-                for provider_id in workload_provider_ids:
-                    if provider_id not in selected_set:
-                        diagnostics.append(
-                            {"provider": provider_id, "status": "excluded", "reason": "Not selected by user."}
-                        )
-                        continue
-                    diag = compatibility_by_provider.get(provider_id)
-                    if diag is None:
-                        diagnostics.append(
-                            {
-                                "provider": provider_id,
-                                "status": "excluded",
-                                "reason": "No compatibility diagnostics available.",
-                            }
-                        )
-                        continue
-                    if provider_id in selected_compatible_set:
-                        diagnostics.append(
-                            {
-                                "provider": provider_id,
-                                "status": "included",
-                                "reason": "Model-compatible and selected.",
-                            }
-                        )
-                    else:
-                        diagnostics.append(
-                            {"provider": provider_id, "status": "excluded", "reason": diag.reason}
-                        )
-                st.caption("Provider diagnostics")
-                try:
-                    st.dataframe(diagnostics, use_container_width=True, hide_index=True)
-                except TypeError:
-                    st.dataframe(diagnostics)
 
             submit = st.form_submit_button("Get Top 10 Recommendations")
 
         if submit:
+            diagnostics = []
+            selected_set = set(selected_global_providers)
+            selected_compatible_set = set(compatible_filtered)
+            for provider_id in workload_provider_ids:
+                if provider_id not in selected_set:
+                    diagnostics.append(
+                        {"provider": provider_id, "status": "excluded", "reason": "Not selected by user."}
+                    )
+                    continue
+                diag = compatibility_by_provider.get(provider_id)
+                if diag is None:
+                    diagnostics.append(
+                        {
+                            "provider": provider_id,
+                            "status": "excluded",
+                            "reason": "No compatibility diagnostics available.",
+                        }
+                    )
+                    continue
+                if provider_id in selected_compatible_set:
+                    diagnostics.append(
+                        {
+                            "provider": provider_id,
+                            "status": "included",
+                            "reason": "Model-compatible and selected.",
+                        }
+                    )
+                else:
+                    diagnostics.append(
+                        {"provider": provider_id, "status": "excluded", "reason": diag.reason}
+                    )
+            st.session_state["llm_provider_diagnostics"] = diagnostics
+
             if not selected_provider_ids:
                 st.error("No compatible providers selected. Choose at least one provider.")
             else:
@@ -671,6 +671,14 @@ with opt_tab:
                 except ValueError as exc:
                     st.error(f"{exc}. Try broader provider selection or another model/bucket.")
                     st.session_state["last_ranked_plans"] = []
+
+        llm_diagnostics = st.session_state.get("llm_provider_diagnostics", [])
+        if llm_diagnostics:
+            with st.expander("Provider diagnostics", expanded=False):
+                try:
+                    st.dataframe(llm_diagnostics, use_container_width=True, hide_index=True)
+                except TypeError:
+                    st.dataframe(llm_diagnostics)
 
         ranked = st.session_state.get("last_ranked_plans", [])
         if ranked:
