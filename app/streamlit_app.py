@@ -232,61 +232,6 @@ with st.sidebar:
             f"Last sync: {generated_at}. Run daily sync."
         )
 
-    if "ia_chat_history" not in st.session_state:
-        st.session_state["ia_chat_history"] = []
-
-    for message in st.session_state["ia_chat_history"][-6:]:
-        with st.chat_message(message["role"]):
-            st.write(message["content"])
-
-    chat_prompt = None
-    if hasattr(st, "chat_input"):
-        chat_prompt = st.chat_input("Ask about providers, pricing, workload setup, and trade-offs...")
-    else:
-        fallback_prompt = st.text_input(
-            "Ask IA AI",
-            value="",
-            key="ia_chat_prompt_fallback",
-        )
-        if st.button("Send", key="ia_chat_send_fallback"):
-            chat_prompt = fallback_prompt.strip()
-
-    if chat_prompt:
-        st.session_state["ia_chat_history"].append({"role": "user", "content": chat_prompt})
-        if not has_llm_key:
-            answer = "AI is disabled. Set OPENAI_API_KEY or ANTHROPIC_API_KEY to use Ask IA AI."
-        else:
-            try:
-                context = _build_ai_context_workload()
-                catalog_context = _build_catalog_context(
-                    selected_workload=selected_workload,
-                    selected_providers=selected_global_providers,
-                    rows=all_rows,
-                )
-                ranked = st.session_state.get("last_ranked_plans", [])
-                ranked_context = ""
-                if ranked:
-                    top = ranked[0]
-                    ranked_context = (
-                        f"\nTop ranked plan: provider={top.provider_id}, offering={top.offering_id}, "
-                        f"monthly_cost={top.monthly_cost_usd:.2f}, score={top.score:.4f}"
-                    )
-                prompt = (
-                    "You are IA AI. Use ONLY the provided catalog/ranking context. "
-                    "If data is missing, say 'not available in current catalog'. "
-                    "Do not invent providers/SKUs/prices.\n\n"
-                    f"Catalog context:\n{catalog_context}\n"
-                    f"{ranked_context}\n\n"
-                    f"Current workload={selected_workload}, mode=tabbed_ui, "
-                    f"selected_providers={','.join(selected_global_providers)}.\n"
-                    f"User question: {chat_prompt}\n"
-                    "Answer with concise bullets and explicit provider/sku/price citations."
-                )
-                answer = _get_ask_ia_router().explain(prompt, context)
-            except Exception as exc:  # noqa: BLE001
-                answer = f"AI request failed: {exc}"
-        st.session_state["ia_chat_history"].append({"role": "assistant", "content": answer})
-
 opt_tab, catalog_tab, invoice_tab = st.tabs(
     ["Optimize Workload", "Browse Pricing Catalog", "Invoice Analyzer"]
 )
