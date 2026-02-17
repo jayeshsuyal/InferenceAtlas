@@ -29,6 +29,15 @@ has_llm_key = bool(os.getenv("OPENAI_API_KEY") or os.getenv("ANTHROPIC_API_KEY")
 
 label_to_pattern = {label: token for token, label in TRAFFIC_PATTERN_LABELS.items()}
 
+CONFIDENCE_MULTIPLIER = {
+    "high": 1.00,
+    "official": 1.00,
+    "medium": 1.10,
+    "estimated": 1.10,
+    "low": 1.25,
+    "vendor_list": 1.25,
+}
+
 
 def _get_ask_ia_router() -> LLMRouter:
     """Build Ask IA router lazily to avoid hard-failing without API keys."""
@@ -79,14 +88,115 @@ def _rank_catalog_offers(
     unit_name: str | None,
     top_k: int,
     monthly_budget_max_usd: float,
-) -> list[object]:
-    filtered = [row for row in rows if row.provider in allowed_providers]
-    if unit_name:
-        filtered = [row for row in filtered if row.unit_name == unit_name]
-    if monthly_budget_max_usd > 0 and unit_name:
-        filtered = [row for row in filtered if row.unit_price_usd <= monthly_budget_max_usd]
-    filtered.sort(key=lambda row: row.unit_price_usd)
-    return filtered[:top_k]
+    comparator_mode: str,
+    confidence_weighted: bool,
+    workload_type: str,
+) -> tuple[list[dict[str, object]], dict[str, str]]:
+    provider_reasons: dict[str, str] = {}
+    ranked_rows: list[dict[str, object]] = []
+
+    for provider in sorted(allowed_providers):
+        provider_rows = [row for row in rows if row.provider == provider]
+        if not provider_rows:
+            provider_reasons[provider] = "No offers for selected workload."
+            continue
+
+        if unit_name:
+            provider_rows = [row for row in provider_rows if row.unit_name == unit_name]
+            if not provider_rows:
+                provider_reasons[provider] = "No offers for selected unit filter."
+                continue
+
+        rankable_for_provider: list[dict[str, object]] = []
+        for row in provider_rows:
+            normalized_price = _normalize_unit_price_for_workload(
+                unit_price_usd=row.unit_price_usd,
+                unit_name=row.unit_name,
+                workload_type=workload_type,
+            )
+            if comparator_mode == "normalized" and normalized_price is None:
+                continue
+
+            effective_price = (
+                normalized_price if comparator_mode == "normalized" else row.unit_price_usd
+            )
+            if effective_price is None:
+                continue
+            if confidence_weighted:
+                effective_price *= CONFIDENCE_MULTIPLIER.get(str(row.confidence).lower(), 1.30)
+            if monthly_budget_max_usd > 0 and effective_price > monthly_budget_max_usd:
+                continue
+
+            rankable_for_provider.append(
+                {
+                    "row": row,
+                    "effective_price": effective_price,
+                    "normalized_price": normalized_price,
+                }
+            )
+
+        if not rankable_for_provider:
+            if comparator_mode == "normalized":
+                provider_reasons[provider] = "No comparable normalized unit for selected workload."
+            elif monthly_budget_max_usd > 0:
+                provider_reasons[provider] = "All matching offers exceed budget filter."
+            else:
+                provider_reasons[provider] = "No rankable offers after filters."
+            continue
+
+        provider_reasons[provider] = f"Included ({len(rankable_for_provider)} rankable offers)."
+        ranked_rows.extend(rankable_for_provider)
+
+    ranked_rows.sort(key=lambda row: float(row["effective_price"]))
+    return ranked_rows[:top_k], provider_reasons
+
+
+def _normalize_unit_price_for_workload(
+    unit_price_usd: float,
+    unit_name: str,
+    workload_type: str,
+) -> float | None:
+    unit = unit_name.strip().lower()
+    workload = workload_type.strip().lower()
+
+    if workload in {"llm", "embedding", "embeddings", "moderation"}:
+        return unit_price_usd if unit == "1m_tokens" else None
+
+    if workload == "rerank":
+        if unit == "per_1k_searches":
+            return unit_price_usd * 1000.0
+        if unit == "1m_tokens":
+            return unit_price_usd
+        return None
+
+    if workload in {"speech_to_text", "transcription"}:
+        if unit == "audio_hour":
+            return unit_price_usd
+        if unit in {"audio_min", "per_minute"}:
+            return unit_price_usd * 60.0
+        return None
+
+    if workload in {"tts", "text_to_speech"}:
+        if unit == "1m_chars":
+            return unit_price_usd
+        if unit == "1k_chars":
+            return unit_price_usd * 1000.0
+        return None
+
+    if workload in {"image_generation", "image_gen"}:
+        if unit in {"image", "per_image"}:
+            return unit_price_usd * 1000.0
+        return None
+
+    if workload == "video_generation":
+        if unit in {"per_second", "video_second"}:
+            return unit_price_usd * 60.0
+        return None
+
+    if workload == "vision":
+        return unit_price_usd if unit == "1k_images" else None
+
+    return None
 
 
 def _build_ai_context_workload() -> WorkloadSpec:
@@ -319,6 +429,21 @@ with opt_tab:
         )
         available_units = sorted({row.unit_name for row in workload_rows})
         with st.form("optimize_non_llm"):
+            comparator_mode = st.selectbox(
+                "Comparator",
+                options=["normalized", "raw"],
+                format_func=lambda value: (
+                    "Normalized workload comparator (recommended)"
+                    if value == "normalized"
+                    else "Raw listed unit price"
+                ),
+                help="Normalized comparator ranks only offers with workload-comparable units.",
+            )
+            confidence_weighted = st.checkbox(
+                "Confidence-weighted ranking",
+                value=True,
+                help="Apply a penalty to lower-confidence data before ranking.",
+            )
             selected_unit = st.selectbox(
                 "Unit filter",
                 options=["All units", *available_units],
@@ -344,28 +469,34 @@ with opt_tab:
                 st.error("No providers selected. Choose at least one provider.")
             else:
                 unit_filter = None if selected_unit == "All units" else selected_unit
-                ranked = _rank_catalog_offers(
+                ranked, provider_reasons = _rank_catalog_offers(
                     rows=workload_rows,
                     allowed_providers=set(selected_global_providers),
                     unit_name=unit_filter,
                     top_k=10,
                     monthly_budget_max_usd=float(monthly_budget_max),
+                    comparator_mode=comparator_mode,
+                    confidence_weighted=confidence_weighted,
+                    workload_type=selected_workload,
                 )
                 if not ranked:
                     st.warning("No offers matched the selected providers/unit/budget filter.")
                 else:
                     table_rows = []
-                    for idx, row in enumerate(ranked, start=1):
+                    for idx, ranked_row in enumerate(ranked, start=1):
+                        row = ranked_row["row"]
+                        effective_price = float(ranked_row["effective_price"])
                         est_cost = None
-                        if unit_filter is not None and monthly_usage > 0:
-                            est_cost = monthly_usage * row.unit_price_usd
+                        if monthly_usage > 0:
+                            est_cost = monthly_usage * effective_price
                         table_rows.append(
                             {
                                 "rank": idx,
                                 "provider": row.provider,
                                 "offering": row.sku_name,
                                 "billing": row.billing_mode,
-                                "unit_price": row.unit_price_usd,
+                                "listed_unit_price": row.unit_price_usd,
+                                "comparator_price": round(effective_price, 8),
                                 "unit_name": row.unit_name,
                                 "confidence": row.confidence,
                                 "monthly_estimate_usd": round(est_cost, 2) if est_cost is not None else None,
@@ -375,8 +506,23 @@ with opt_tab:
                         st.dataframe(table_rows, use_container_width=True, hide_index=True)
                     except TypeError:
                         st.dataframe(table_rows)
-                    if unit_filter is None:
-                        st.info("Monthly estimate hidden because multiple units are mixed.")
+
+                diagnostics = []
+                selected_set = set(selected_global_providers)
+                for provider_id in workload_provider_ids:
+                    if provider_id not in selected_set:
+                        diagnostics.append(
+                            {"provider": provider_id, "status": "excluded", "reason": "Not selected by user."}
+                        )
+                        continue
+                    reason = provider_reasons.get(provider_id, "No matching offers after filters.")
+                    status = "included" if reason.startswith("Included") else "excluded"
+                    diagnostics.append({"provider": provider_id, "status": status, "reason": reason})
+                with st.expander("Provider inclusion diagnostics", expanded=False):
+                    try:
+                        st.dataframe(diagnostics, use_container_width=True, hide_index=True)
+                    except TypeError:
+                        st.dataframe(diagnostics)
     else:
         ai_defaults = st.session_state.get("ai_defaults", {})
 
@@ -420,12 +566,19 @@ with opt_tab:
             model_bucket_preview = _model_key_to_bucket(model_key)
             compatibility = get_provider_compatibility(
                 model_bucket=model_bucket_preview,
-                provider_ids=set(selected_global_providers),
+                provider_ids=set(workload_provider_ids),
             )
+            compatibility_by_provider = {row.provider_id: row for row in compatibility}
             compatible_filtered = sorted(
-                row.provider_id for row in compatibility if row.compatible
+                row.provider_id
+                for row in compatibility
+                if row.compatible and row.provider_id in set(selected_global_providers)
             )
-            incompatible_filtered = [row for row in compatibility if not row.compatible]
+            incompatible_filtered = [
+                row
+                for row in compatibility
+                if not row.compatible and row.provider_id in set(selected_global_providers)
+            ]
             monthly_budget_max = 0.0
 
             selected_provider_ids = st.multiselect(
@@ -449,6 +602,42 @@ with opt_tab:
                             f"{row.provider_id} ({row.reason})" for row in incompatible_filtered
                         )
                     )
+                diagnostics = []
+                selected_set = set(selected_global_providers)
+                selected_compatible_set = set(compatible_filtered)
+                for provider_id in workload_provider_ids:
+                    if provider_id not in selected_set:
+                        diagnostics.append(
+                            {"provider": provider_id, "status": "excluded", "reason": "Not selected by user."}
+                        )
+                        continue
+                    diag = compatibility_by_provider.get(provider_id)
+                    if diag is None:
+                        diagnostics.append(
+                            {
+                                "provider": provider_id,
+                                "status": "excluded",
+                                "reason": "No compatibility diagnostics available.",
+                            }
+                        )
+                        continue
+                    if provider_id in selected_compatible_set:
+                        diagnostics.append(
+                            {
+                                "provider": provider_id,
+                                "status": "included",
+                                "reason": "Model-compatible and selected.",
+                            }
+                        )
+                    else:
+                        diagnostics.append(
+                            {"provider": provider_id, "status": "excluded", "reason": diag.reason}
+                        )
+                st.caption("Provider diagnostics")
+                try:
+                    st.dataframe(diagnostics, use_container_width=True, hide_index=True)
+                except TypeError:
+                    st.dataframe(diagnostics)
 
             submit = st.form_submit_button("Get Top 10 Recommendations")
 
