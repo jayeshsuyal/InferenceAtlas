@@ -9,17 +9,12 @@ from datetime import datetime, timezone
 
 import streamlit as st
 
-from inference_atlas import (
-    analyze_invoice_csv,
-    build_provider_diagnostics,
-    get_catalog_v2_rows,
-    get_provider_compatibility,
-    rank_catalog_offers,
-    rank_configs,
-)
+from inference_atlas.catalog_ranking import build_provider_diagnostics, rank_catalog_offers
 from inference_atlas.config import TRAFFIC_PATTERN_LABELS, TRAFFIC_PATTERN_PEAK_TO_AVG_DEFAULT
-from inference_atlas.data_loader import get_catalog_v2_metadata, get_models
+from inference_atlas.data_loader import get_catalog_v2_metadata, get_catalog_v2_rows, get_models
+from inference_atlas.invoice_analyzer import analyze_invoice_csv
 from inference_atlas.llm import LLMRouter, RouterConfig, WorkloadSpec
+from inference_atlas.mvp_planner import get_provider_compatibility, rank_configs
 from inference_atlas.workload_types import WorkloadType
 
 st.set_page_config(page_title="InferenceAtlas", layout="centered")
