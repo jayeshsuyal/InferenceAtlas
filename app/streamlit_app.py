@@ -184,35 +184,45 @@ if not selected_global_providers:
 
 with st.sidebar:
     st.header("Ask IA AI")
-    st.caption(
-        "Ask about provider selection, pricing trade-offs, workload setup, and budget impact."
-    )
-    with st.expander("What to ask", expanded=False):
-        st.markdown(
-            "- Which provider is cheapest for speech-to-text at 1M audio minutes/month?\n"
-            "- Compare top 3 providers for this workload and explain trade-offs.\n"
-            "- I have a $5,000/month budget. What should I choose?\n"
-            "- Why was provider X excluded from recommendations?\n"
-            "- What assumptions are driving these rankings?"
-        )
-        prompt_templates = {
-            "Provider comparison": "Compare top providers for this workload and explain trade-offs.",
-            "Budget planning": "I have a monthly budget of $____. Which providers should I shortlist?",
-            "Exclusion debug": "Why are some providers excluded for my current filters?",
-            "Optimization advice": "How should I adjust workload and provider filters for better cost/performance?",
-        }
-        selected_template = st.selectbox(
-            "Prompt template",
-            options=list(prompt_templates),
-            index=0,
-        )
-        if st.button("Use template", key="ia_use_template"):
-            st.session_state["ia_chat_prompt_fallback"] = prompt_templates[selected_template]
 
-    if not has_llm_key:
-        st.caption(
-            "Set OPENAI_API_KEY or ANTHROPIC_API_KEY to enable Ask IA AI."
+    with st.expander("AI Suggest", expanded=False):
+        if not has_llm_key:
+            st.caption(
+                "Set OPENAI_API_KEY or ANTHROPIC_API_KEY to enable AI parsing, "
+                "explanations, and what-if suggestions."
+            )
+        ai_text = st.text_area(
+            "Ask AI to help configure this workload",
+            placeholder=(
+                "e.g. I need low-cost text-to-speech for 2M chars/month, which providers "
+                "should I select and what budget should I set?"
+            ),
+            height=80,
+            key="ai_helper_input_text",
         )
+        if not selected_global_providers:
+            st.caption("Select providers first to get grounded suggestions.")
+        if st.button(
+            "AI: Suggest next steps",
+            disabled=not has_llm_key or not selected_global_providers,
+        ):
+            try:
+                catalog_context = _build_catalog_context(
+                    selected_workload=selected_workload,
+                    selected_providers=selected_global_providers,
+                    rows=all_rows,
+                )
+                prompt = (
+                    "You are IA AI. Use ONLY the provided catalog context. "
+                    "If data is missing, say 'not available in current catalog'. "
+                    "Do not invent providers/SKUs/prices.\n\n"
+                    f"Context:\n{catalog_context}\n\n"
+                    f"User asks: {ai_text}\n"
+                    "Answer in concise bullets with provider/sku/price citations from context."
+                )
+                st.info(_get_ask_ia_router().explain(prompt, _build_ai_context_workload()))
+            except Exception as exc:  # noqa: BLE001
+                st.error(f"AI assistant failed: {exc}")
 
     if freshness_days is None:
         st.warning("Catalog freshness unknown. Run sync to ensure data is current.")
@@ -226,11 +236,8 @@ with st.sidebar:
         st.session_state["ia_chat_history"] = []
 
     for message in st.session_state["ia_chat_history"][-6:]:
-        role = str(message.get("role", "assistant")).strip().lower()
-        title = "You" if role == "user" else "IA AI"
-        st.markdown(f"**{title}**")
-        st.write(message.get("content", ""))
-        st.markdown("---")
+        with st.chat_message(message["role"]):
+            st.write(message["content"])
 
     chat_prompt = None
     if hasattr(st, "chat_input"):
@@ -245,9 +252,6 @@ with st.sidebar:
             chat_prompt = fallback_prompt.strip()
 
     if chat_prompt:
-        selected_providers_for_ai = (
-            selected_global_providers if selected_global_providers else workload_provider_ids
-        )
         st.session_state["ia_chat_history"].append({"role": "user", "content": chat_prompt})
         if not has_llm_key:
             answer = "AI is disabled. Set OPENAI_API_KEY or ANTHROPIC_API_KEY to use Ask IA AI."
@@ -256,7 +260,7 @@ with st.sidebar:
                 context = _build_ai_context_workload()
                 catalog_context = _build_catalog_context(
                     selected_workload=selected_workload,
-                    selected_providers=selected_providers_for_ai,
+                    selected_providers=selected_global_providers,
                     rows=all_rows,
                 )
                 ranked = st.session_state.get("last_ranked_plans", [])
@@ -274,7 +278,7 @@ with st.sidebar:
                     f"Catalog context:\n{catalog_context}\n"
                     f"{ranked_context}\n\n"
                     f"Current workload={selected_workload}, mode=tabbed_ui, "
-                    f"selected_providers={','.join(selected_providers_for_ai)}.\n"
+                    f"selected_providers={','.join(selected_global_providers)}.\n"
                     f"User question: {chat_prompt}\n"
                     "Answer with concise bullets and explicit provider/sku/price citations."
                 )
