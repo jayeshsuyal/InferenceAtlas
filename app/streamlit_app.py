@@ -191,85 +191,122 @@ workload_provider_ids = sorted({row.provider for row in workload_rows})
 meta = get_catalog_v2_metadata()
 generated_at = str(meta.get("generated_at_utc") or "")
 freshness_days = _catalog_freshness_days(generated_at)
-if freshness_days is None:
-    st.warning("Catalog freshness unknown. Run sync to ensure data is current.")
-elif freshness_days > 3:
-    st.warning(
-        f"Catalog is stale ({freshness_days} days old). "
-        f"Last sync: {generated_at}. Run daily sync."
-    )
-else:
-    st.caption(f"Catalog freshness: {freshness_days} day(s) old. Last sync: {generated_at}")
-all_provider_ids = sorted({row.provider for row in all_rows})
-all_provider_count = len(all_provider_ids)
-
-coverage_tokens = []
-for workload in (
-    "llm",
-    "embeddings",
-    "text_to_speech",
-    "speech_to_text",
-):
-    count = len({row.provider for row in all_rows if row.workload_type == workload})
-    coverage_tokens.append(f"{workload}: {count}/{all_provider_count}")
-
-selected_coverage_count = len(workload_provider_ids)
-st.caption(
-    f"Coverage ({selected_workload}): {selected_coverage_count}/{all_provider_count} providers | "
-    + " | ".join(coverage_tokens)
-)
-
-page_mode = st.selectbox(
-    "2. Choose view",
-    options=["Optimize Workload", "Browse Pricing Catalog", "Invoice Analyzer"],
-    index=0,
-    help="Catalog is hidden unless you explicitly choose it here.",
-)
 
 selected_global_providers = st.multiselect(
-    f"3. Providers ({len(workload_provider_ids)} available for {selected_workload})",
+    f"2. Providers ({len(workload_provider_ids)} available for {selected_workload})",
     options=workload_provider_ids,
-    default=workload_provider_ids,
+    default=[],
     help="This provider filter is shared across optimizer and catalog views.",
 )
 if not selected_global_providers:
-    st.info("Select one or more providers to continue.")
+    st.info("No providers selected — pick one or more to continue.")
 
-with st.expander("AI Assistant (optional)"):
-    if not has_llm_key:
-        st.caption(
-            "Set OPENAI_API_KEY or ANTHROPIC_API_KEY to enable AI parsing, "
-            "explanations, and what-if suggestions."
+with st.sidebar:
+    st.header("Ask IA AI")
+
+    with st.expander("AI Suggest", expanded=False):
+        if not has_llm_key:
+            st.caption(
+                "Set OPENAI_API_KEY or ANTHROPIC_API_KEY to enable AI parsing, "
+                "explanations, and what-if suggestions."
+            )
+        ai_text = st.text_area(
+            "Ask AI to help configure this workload",
+            placeholder=(
+                "e.g. I need low-cost text-to-speech for 2M chars/month, which providers "
+                "should I select and what budget should I set?"
+            ),
+            height=80,
+            key="ai_helper_input_text",
         )
-    ai_text = st.text_area(
-        "Ask AI to help configure this workload",
-        placeholder=(
-            "e.g. I need low-cost text-to-speech for 2M chars/month, which providers "
-            "should I select and what budget should I set?"
-        ),
-        height=80,
-        key="ai_helper_input_text",
-    )
-    if st.button("AI: Suggest next steps", disabled=not has_llm_key):
-        try:
-            catalog_context = _build_catalog_context(
-                selected_workload=selected_workload,
-                selected_providers=selected_global_providers,
-                rows=all_rows,
-            )
-            prompt = (
-                "You are IA AI. Use ONLY the provided catalog context. "
-                "If data is missing, say 'not available in current catalog'. "
-                "Do not invent providers/SKUs/prices.\n\n"
-                f"Context:\n{catalog_context}\n\n"
-                f"User asks: {ai_text}\n"
-                "Answer in concise bullets with provider/sku/price citations from context."
-            )
-            st.info(_get_ask_ia_router().explain(prompt, _build_ai_context_workload()))
-        except Exception as exc:  # noqa: BLE001
-            st.error(f"AI assistant failed: {exc}")
+        if st.button("AI: Suggest next steps", disabled=not has_llm_key):
+            try:
+                catalog_context = _build_catalog_context(
+                    selected_workload=selected_workload,
+                    selected_providers=selected_global_providers,
+                    rows=all_rows,
+                )
+                prompt = (
+                    "You are IA AI. Use ONLY the provided catalog context. "
+                    "If data is missing, say 'not available in current catalog'. "
+                    "Do not invent providers/SKUs/prices.\n\n"
+                    f"Context:\n{catalog_context}\n\n"
+                    f"User asks: {ai_text}\n"
+                    "Answer in concise bullets with provider/sku/price citations from context."
+                )
+                st.info(_get_ask_ia_router().explain(prompt, _build_ai_context_workload()))
+            except Exception as exc:  # noqa: BLE001
+                st.error(f"AI assistant failed: {exc}")
 
-if page_mode == "Optimize Workload":
+    if freshness_days is None:
+        st.warning("Catalog freshness unknown. Run sync to ensure data is current.")
+    elif freshness_days > 3:
+        st.warning(
+            f"Catalog is stale ({freshness_days} days old). "
+            f"Last sync: {generated_at}. Run daily sync."
+        )
+
+    if "ia_chat_history" not in st.session_state:
+        st.session_state["ia_chat_history"] = []
+
+    for message in st.session_state["ia_chat_history"][-6:]:
+        with st.chat_message(message["role"]):
+            st.write(message["content"])
+
+    chat_prompt = None
+    if hasattr(st, "chat_input"):
+        chat_prompt = st.chat_input("Ask about providers, pricing, workload setup, and trade-offs...")
+    else:
+        fallback_prompt = st.text_input(
+            "Ask IA AI",
+            value="",
+            key="ia_chat_prompt_fallback",
+        )
+        if st.button("Send", key="ia_chat_send_fallback"):
+            chat_prompt = fallback_prompt.strip()
+
+    if chat_prompt:
+        st.session_state["ia_chat_history"].append({"role": "user", "content": chat_prompt})
+        if not has_llm_key:
+            answer = "AI is disabled. Set OPENAI_API_KEY or ANTHROPIC_API_KEY to use Ask IA AI."
+        else:
+            try:
+                context = _build_ai_context_workload()
+                catalog_context = _build_catalog_context(
+                    selected_workload=selected_workload,
+                    selected_providers=selected_global_providers,
+                    rows=all_rows,
+                )
+                ranked = st.session_state.get("last_ranked_plans", [])
+                ranked_context = ""
+                if ranked:
+                    top = ranked[0]
+                    ranked_context = (
+                        f"\nTop ranked plan: provider={top.provider_id}, offering={top.offering_id}, "
+                        f"monthly_cost={top.monthly_cost_usd:.2f}, score={top.score:.4f}"
+                    )
+                prompt = (
+                    "You are IA AI. Use ONLY the provided catalog/ranking context. "
+                    "If data is missing, say 'not available in current catalog'. "
+                    "Do not invent providers/SKUs/prices.\n\n"
+                    f"Catalog context:\n{catalog_context}\n"
+                    f"{ranked_context}\n\n"
+                    f"Current workload={selected_workload}, mode=tabbed_ui, "
+                    f"selected_providers={','.join(selected_global_providers)}.\n"
+                    f"User question: {chat_prompt}\n"
+                    "Answer with concise bullets and explicit provider/sku/price citations."
+                )
+                answer = _get_ask_ia_router().explain(prompt, context)
+            except Exception as exc:  # noqa: BLE001
+                answer = f"AI request failed: {exc}"
+        st.session_state["ia_chat_history"].append({"role": "assistant", "content": answer})
+        st.rerun()
+
+opt_tab, catalog_tab, invoice_tab = st.tabs(
+    ["Optimize Workload", "Browse Pricing Catalog", "Invoice Analyzer"]
+)
+
+with opt_tab:
     if selected_workload != "llm":
         st.subheader("Top Offers (Catalog Ranker - Beta)")
         st.caption(
@@ -375,12 +412,6 @@ if page_mode == "Optimize Workload":
             )
             st.session_state["ia_pattern"] = label_to_pattern[pattern_label]
             st.session_state["ia_model_key"] = model_key
-            monthly_budget_max = st.number_input(
-                "Max monthly budget (USD, optional)",
-                min_value=0.0,
-                value=0.0,
-                step=100.0,
-            )
 
             model_bucket_preview = _model_key_to_bucket(model_key)
             compatibility = get_provider_compatibility(
@@ -391,6 +422,7 @@ if page_mode == "Optimize Workload":
                 row.provider_id for row in compatibility if row.compatible
             )
             incompatible_filtered = [row for row in compatibility if not row.compatible]
+            monthly_budget_max = 0.0
 
             selected_provider_ids = st.multiselect(
                 f"Providers to include ({len(compatible_filtered)} compatible after filters)",
@@ -399,13 +431,20 @@ if page_mode == "Optimize Workload":
                 help="Top 10 recommendations will be ranked across selected compatible providers.",
             )
 
-            if incompatible_filtered:
-                st.caption(
-                    "Excluded by model compatibility: "
-                    + ", ".join(
-                        f"{row.provider_id} ({row.reason})" for row in incompatible_filtered
-                    )
+            with st.expander("Advanced options", expanded=False):
+                monthly_budget_max = st.number_input(
+                    "Max monthly budget (USD, optional)",
+                    min_value=0.0,
+                    value=0.0,
+                    step=100.0,
                 )
+                if incompatible_filtered:
+                    st.caption(
+                        "Excluded by model compatibility: "
+                        + ", ".join(
+                            f"{row.provider_id} ({row.reason})" for row in incompatible_filtered
+                        )
+                    )
 
             submit = st.form_submit_button("Get Top 10 Recommendations")
 
@@ -455,24 +494,33 @@ if page_mode == "Optimize Workload":
                     c1, c2 = st.columns([3, 1])
                     with c1:
                         st.markdown(f"### {plan.rank}. {plan.provider_name} - {plan.offering_id}")
-                        st.caption(plan.why)
                     with c2:
                         st.metric("Monthly Cost", f"${plan.monthly_cost_usd:,.0f}")
-                        st.metric("Score", f"{plan.score:,.1f}")
                         st.metric("Confidence", plan.confidence)
 
                     if plan.utilization_at_peak is not None:
                         st.progress(min(max(plan.utilization_at_peak, 0.0), 1.0))
                         st.caption(f"Peak utilization: {plan.utilization_at_peak * 100:.0f}%")
-                    st.caption(
-                        f"Risk: overload={plan.risk.risk_overload:.2f}, complexity={plan.risk.risk_complexity:.2f}, "
-                        f"total={plan.risk.total_risk:.2f}"
-                    )
+
+                    if plan.risk.total_risk < 0.3:
+                        st.success("Risk: Low")
+                    elif plan.risk.total_risk < 0.6:
+                        st.warning("Risk: Medium")
+                    else:
+                        st.error("Risk: High")
+
+                    with st.expander("Why this? / Assumptions", expanded=False):
+                        st.caption(plan.why)
+                        assumptions_line = ", ".join(
+                            f"{key}={value}"
+                            for key, value in sorted(plan.assumptions.items())
+                        )
+                        st.caption(f"Assumptions: {assumptions_line}")
                 st.markdown("---")
         else:
             st.info("Set LLM inputs and click Get Top 10 Recommendations.")
 
-if page_mode == "Browse Pricing Catalog":
+with catalog_tab:
     st.subheader("Pricing Catalog")
     st.caption(f"Current category: {selected_workload_label}")
 
@@ -541,7 +589,7 @@ if page_mode == "Browse Pricing Catalog":
         mime="text/csv",
     )
 
-if page_mode == "Invoice Analyzer":
+with invoice_tab:
     st.subheader("Invoice Analyzer (Beta)")
     st.caption(
         "Upload invoice CSV and compare effective unit prices against current catalog rows."
@@ -578,61 +626,3 @@ if page_mode == "Invoice Analyzer":
                 )
         except ValueError as exc:
             st.error(str(exc))
-
-st.markdown("---")
-st.subheader("Ask IA AI")
-if "ia_chat_history" not in st.session_state:
-    st.session_state["ia_chat_history"] = []
-
-for message in st.session_state["ia_chat_history"][-6:]:
-    with st.chat_message(message["role"]):
-        st.write(message["content"])
-
-chat_prompt = None
-if hasattr(st, "chat_input"):
-    chat_prompt = st.chat_input("Ask about providers, pricing, workload setup, and trade-offs...")
-else:
-    fallback_prompt = st.text_input(
-        "Ask IA AI",
-        value="",
-        key="ia_chat_prompt_fallback",
-    )
-    if st.button("Send", key="ia_chat_send_fallback"):
-        chat_prompt = fallback_prompt.strip()
-
-if chat_prompt:
-    st.session_state["ia_chat_history"].append({"role": "user", "content": chat_prompt})
-    if not has_llm_key:
-        answer = "AI is disabled. Set OPENAI_API_KEY or ANTHROPIC_API_KEY to use Ask IA AI."
-    else:
-        try:
-            context = _build_ai_context_workload()
-            catalog_context = _build_catalog_context(
-                selected_workload=selected_workload,
-                selected_providers=selected_global_providers,
-                rows=all_rows,
-            )
-            ranked = st.session_state.get("last_ranked_plans", [])
-            ranked_context = ""
-            if ranked:
-                top = ranked[0]
-                ranked_context = (
-                    f"\nTop ranked plan: provider={top.provider_id}, offering={top.offering_id}, "
-                    f"monthly_cost={top.monthly_cost_usd:.2f}, score={top.score:.4f}"
-                )
-            prompt = (
-                "You are IA AI. Use ONLY the provided catalog/ranking context. "
-                "If data is missing, say 'not available in current catalog'. "
-                "Do not invent providers/SKUs/prices.\n\n"
-                f"Catalog context:\n{catalog_context}\n"
-                f"{ranked_context}\n\n"
-                f"Current workload={selected_workload}, mode={page_mode}, "
-                f"selected_providers={','.join(selected_global_providers)}.\n"
-                f"User question: {chat_prompt}\n"
-                "Answer with concise bullets and explicit provider/sku/price citations."
-            )
-            answer = _get_ask_ia_router().explain(prompt, context)
-        except Exception as exc:  # noqa: BLE001
-            answer = f"AI request failed: {exc}"
-    st.session_state["ia_chat_history"].append({"role": "assistant", "content": answer})
-    st.rerun()
