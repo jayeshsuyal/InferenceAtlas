@@ -686,7 +686,7 @@ def get_models() -> dict[str, ModelRequirement]:
         Dictionary mapping model keys to model requirements.
         Includes recommended memory, display name, and parameter count.
     """
-    from data.performance import MODEL_REQUIREMENTS
+    from inference_atlas.performance_data import MODEL_REQUIREMENTS
 
     return MODEL_REQUIREMENTS
 
