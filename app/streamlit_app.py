@@ -219,7 +219,12 @@ with st.sidebar:
             height=80,
             key="ai_helper_input_text",
         )
-        if st.button("AI: Suggest next steps", disabled=not has_llm_key):
+        if not selected_global_providers:
+            st.caption("Select providers first to get grounded suggestions.")
+        if st.button(
+            "AI: Suggest next steps",
+            disabled=not has_llm_key or not selected_global_providers,
+        ):
             try:
                 catalog_context = _build_catalog_context(
                     selected_workload=selected_workload,
@@ -300,7 +305,6 @@ with st.sidebar:
             except Exception as exc:  # noqa: BLE001
                 answer = f"AI request failed: {exc}"
         st.session_state["ia_chat_history"].append({"role": "assistant", "content": answer})
-        st.rerun()
 
 opt_tab, catalog_tab, invoice_tab = st.tabs(
     ["Optimize Workload", "Browse Pricing Catalog", "Invoice Analyzer"]
@@ -311,14 +315,14 @@ with opt_tab:
         st.subheader("Top Offers (Catalog Ranker - Beta)")
         st.caption(
             "This optimizer mode ranks by listed unit price only. "
-            "Throughput/SLA-aware optimization is not implemented yet ?"
+            "Throughput/SLA-aware optimization is not implemented yet."
         )
         available_units = sorted({row.unit_name for row in workload_rows})
         with st.form("optimize_non_llm"):
             selected_unit = st.selectbox(
                 "Unit filter",
                 options=["All units", *available_units],
-                help="Cross-unit normalization is not implemented yet ? Filter by a single unit for clean comparisons.",
+                help="Cross-unit normalization is not implemented yet. Filter by a single unit for clean comparisons.",
             )
             monthly_usage = st.number_input(
                 "Monthly usage estimate",
