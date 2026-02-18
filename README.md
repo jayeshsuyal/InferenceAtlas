@@ -345,7 +345,7 @@ for r in cheapest:
 - Output token ratio defaults to 30% (configurable but not workload-adaptive)
 
 ### Non-LLM Optimizer (Beta)
-- Price-per-unit sorting only — no throughput modeling
+- Demand-aware monthly ranking with optional throughput checks when metadata is available
 - Mixed units (e.g., `image` vs `megapixel`) cannot be cross-compared; use the unit filter
 - No SLA or reliability comparison
 
@@ -369,4 +369,4 @@ This is a planning tool, not a procurement or SLA guarantee. Pricing changes fre
 
 ## License
 
-MIT
+Apache 2.0 — see [LICENSE](LICENSE) for details.

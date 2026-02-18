@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Any
 
@@ -18,6 +19,8 @@ class RankedCatalogOffer:
     unit_name: str
     confidence: str
     monthly_estimate_usd: float | None
+    required_replicas: int | None = None
+    capacity_check: str | None = None
     exclusion_reason: str | None = None
 
 
@@ -77,6 +80,21 @@ def confidence_multiplier(confidence: str) -> float:
         return 1.30
 
 
+def _throughput_to_per_hour(throughput_value: float, throughput_unit: str) -> float | None:
+    token = str(throughput_unit).strip().lower()
+    if token in {"per_hour", "hour", "units_per_hour", "requests_per_hour"}:
+        return throughput_value
+    if token in {"per_minute", "minute", "units_per_minute", "requests_per_minute"}:
+        return throughput_value * 60.0
+    if token in {"per_second", "second", "units_per_second", "requests_per_second"}:
+        return throughput_value * 3600.0
+    if token in {"audio_min_per_minute", "audio_minute_per_minute"}:
+        return throughput_value * 60.0
+    if token in {"audio_hour_per_hour"}:
+        return throughput_value
+    return None
+
+
 def rank_catalog_offers(
     rows: list[object],
     allowed_providers: set[str],
@@ -87,6 +105,10 @@ def rank_catalog_offers(
     confidence_weighted: bool,
     workload_type: str,
     monthly_usage: float = 0.0,
+    throughput_aware: bool = False,
+    peak_to_avg: float = 2.5,
+    util_target: float = 0.75,
+    strict_capacity_check: bool = False,
 ) -> tuple[list[RankedCatalogOffer], dict[str, str], int]:
     provider_reasons: dict[str, str] = {}
     ranked_rows: list[RankedCatalogOffer] = []
@@ -105,6 +127,7 @@ def rank_catalog_offers(
                 continue
 
         provider_rankable = 0
+        excluded_for_capacity = 0
         for row in provider_rows:
             normalized_price = normalize_unit_price_for_workload(
                 unit_price_usd=row.unit_price_usd,
@@ -123,9 +146,47 @@ def rank_catalog_offers(
                 continue
             if confidence_weighted:
                 effective_price *= confidence_multiplier(row.confidence)
-            if monthly_budget_max_usd > 0 and effective_price > monthly_budget_max_usd:
-                excluded_offer_count += 1
-                continue
+
+            monthly_estimate: float | None = (
+                (monthly_usage * effective_price) if monthly_usage > 0 else None
+            )
+            required_replicas: int | None = None
+            capacity_check: str | None = None
+
+            if throughput_aware and monthly_usage > 0:
+                required_peak_rate_per_hour = (monthly_usage / (30.0 * 24.0)) * max(peak_to_avg, 1.0)
+                required_capacity_per_hour = required_peak_rate_per_hour / max(util_target, 1e-6)
+                throughput_value = getattr(row, "throughput_value", None)
+                throughput_unit = getattr(row, "throughput_unit", None)
+                if throughput_value is not None and throughput_unit:
+                    row_capacity_per_hour = _throughput_to_per_hour(
+                        float(throughput_value), str(throughput_unit)
+                    )
+                    if row_capacity_per_hour and row_capacity_per_hour > 0:
+                        required_replicas = max(
+                            1,
+                            int(math.ceil(required_capacity_per_hour / row_capacity_per_hour)),
+                        )
+                        capacity_check = (
+                            f"pass ({required_replicas} replica{'s' if required_replicas != 1 else ''})"
+                        )
+                        if monthly_estimate is not None:
+                            monthly_estimate *= required_replicas
+                    else:
+                        capacity_check = "unknown throughput unit"
+                else:
+                    capacity_check = "missing throughput metadata"
+
+                if strict_capacity_check and capacity_check and not str(capacity_check).startswith("pass"):
+                    excluded_offer_count += 1
+                    excluded_for_capacity += 1
+                    continue
+
+            if monthly_budget_max_usd > 0:
+                budget_value = monthly_estimate if monthly_estimate is not None else effective_price
+                if budget_value > monthly_budget_max_usd:
+                    excluded_offer_count += 1
+                    continue
 
             provider_rankable += 1
             ranked_rows.append(
@@ -137,14 +198,16 @@ def rank_catalog_offers(
                     comparator_price=effective_price,
                     unit_name=row.unit_name,
                     confidence=row.confidence,
-                    monthly_estimate_usd=(
-                        (monthly_usage * effective_price) if monthly_usage > 0 else None
-                    ),
+                    monthly_estimate_usd=monthly_estimate,
+                    required_replicas=required_replicas,
+                    capacity_check=capacity_check,
                 )
             )
 
         if provider_rankable == 0:
-            if comparator_mode == "normalized":
+            if excluded_for_capacity > 0:
+                provider_reasons[provider] = "Excluded by strict capacity check (missing throughput metadata)."
+            elif comparator_mode == "normalized":
                 provider_reasons[provider] = "No comparable normalized unit for selected workload."
             elif monthly_budget_max_usd > 0:
                 provider_reasons[provider] = "All matching offers exceed budget filter."
@@ -154,7 +217,15 @@ def rank_catalog_offers(
 
         provider_reasons[provider] = f"Included ({provider_rankable} rankable offers)."
 
-    ranked_rows.sort(key=lambda row: row.comparator_price)
+    if monthly_usage > 0:
+        ranked_rows.sort(
+            key=lambda row: (
+                row.monthly_estimate_usd if row.monthly_estimate_usd is not None else float("inf"),
+                row.comparator_price,
+            )
+        )
+    else:
+        ranked_rows.sort(key=lambda row: row.comparator_price)
     return ranked_rows[:top_k], provider_reasons, excluded_offer_count
 
 
@@ -175,4 +246,3 @@ def build_provider_diagnostics(
         status = "included" if reason.startswith("Included") else "excluded"
         diagnostics.append({"provider": provider_id, "status": status, "reason": reason})
     return diagnostics
-

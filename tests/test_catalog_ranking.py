@@ -92,6 +92,92 @@ def test_rank_catalog_offers_counts_exclusions_and_sorts() -> None:
     assert ranked[0].monthly_estimate_usd is not None
 
 
+def test_rank_catalog_offers_throughput_aware_with_replicas() -> None:
+    rows = [
+        SimpleNamespace(
+            provider="a",
+            unit_name="audio_hour",
+            unit_price_usd=1.0,
+            confidence="high",
+            sku_name="a-stt",
+            billing_mode="per_unit",
+            throughput_value=1.0,
+            throughput_unit="per_hour",
+        ),
+        SimpleNamespace(
+            provider="b",
+            unit_name="audio_hour",
+            unit_price_usd=0.8,
+            confidence="high",
+            sku_name="b-stt",
+            billing_mode="per_unit",
+            throughput_value=20.0,
+            throughput_unit="per_hour",
+        ),
+    ]
+    ranked, _, _ = rank_catalog_offers(
+        rows=rows,
+        allowed_providers={"a", "b"},
+        unit_name="audio_hour",
+        top_k=5,
+        monthly_budget_max_usd=0.0,
+        comparator_mode="normalized",
+        confidence_weighted=False,
+        workload_type="speech_to_text",
+        monthly_usage=720.0,
+        throughput_aware=True,
+        peak_to_avg=2.5,
+        util_target=0.75,
+    )
+    assert ranked[0].provider == "b"
+    assert ranked[0].required_replicas == 1
+    assert ranked[1].required_replicas is not None
+    assert ranked[1].required_replicas > ranked[0].required_replicas
+
+
+def test_rank_catalog_offers_strict_capacity_check_excludes_missing_throughput() -> None:
+    rows = [
+        SimpleNamespace(
+            provider="a",
+            unit_name="audio_hour",
+            unit_price_usd=1.0,
+            confidence="high",
+            sku_name="a-stt",
+            billing_mode="per_unit",
+            throughput_value=None,
+            throughput_unit=None,
+        ),
+        SimpleNamespace(
+            provider="b",
+            unit_name="audio_hour",
+            unit_price_usd=1.2,
+            confidence="high",
+            sku_name="b-stt",
+            billing_mode="per_unit",
+            throughput_value=50.0,
+            throughput_unit="per_hour",
+        ),
+    ]
+    ranked, reasons, excluded = rank_catalog_offers(
+        rows=rows,
+        allowed_providers={"a", "b"},
+        unit_name="audio_hour",
+        top_k=5,
+        monthly_budget_max_usd=0.0,
+        comparator_mode="normalized",
+        confidence_weighted=False,
+        workload_type="speech_to_text",
+        monthly_usage=100.0,
+        throughput_aware=True,
+        peak_to_avg=2.5,
+        util_target=0.75,
+        strict_capacity_check=True,
+    )
+    assert excluded >= 1
+    assert [row.provider for row in ranked] == ["b"]
+    assert reasons["a"].startswith("Excluded by strict capacity check")
+
+
 def test_build_provider_diagnostics_included_excluded() -> None:
     diagnostics = build_provider_diagnostics(
         workload_provider_ids=["a", "b", "c"],
@@ -102,4 +188,3 @@ def test_build_provider_diagnostics_included_excluded() -> None:
     assert by_provider["a"]["status"] == "included"
     assert by_provider["b"]["reason"] == "Not selected by user."
     assert by_provider["c"]["status"] == "excluded"
-

@@ -161,6 +161,8 @@ class CatalogV2Row:
     source_date: str
     confidence: str
     source_kind: str
+    throughput_value: float | None = None
+    throughput_unit: str | None = None
 
 
 _pricing_records_cache: list[PricingRecord] | None = None
@@ -368,6 +370,14 @@ def _load_catalog_v2_rows() -> list[CatalogV2Row]:
                     source_date=str(row.get("source_date", "")),
                     confidence=str(row.get("confidence", "")),
                     source_kind=str(row.get("source_kind", "")),
+                    throughput_value=(
+                        float(row["throughput_value"])
+                        if row.get("throughput_value") not in (None, "", "null")
+                        else None
+                    ),
+                    throughput_unit=(
+                        str(row.get("throughput_unit", "")).strip() or None
+                    ),
                 )
             )
         except (KeyError, TypeError, ValueError) as exc:

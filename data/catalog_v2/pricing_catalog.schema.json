@@ -95,6 +95,12 @@
           },
           "source_kind": {
             "type": "string"
+          },
+          "throughput_value": {
+            "type": "number"
+          },
+          "throughput_unit": {
+            "type": "string"
           }
         }
       }

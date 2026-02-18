@@ -225,8 +225,8 @@ with opt_tab:
     if selected_workload != "llm":
         st.subheader("Top Offers (Catalog Ranker - Beta)")
         st.caption(
-            "This optimizer mode ranks by listed unit price only. "
-            "Throughput/SLA-aware optimization is not implemented yet."
+            "This optimizer supports demand-aware monthly ranking. "
+            "Throughput feasibility is applied when throughput metadata is available."
         )
         available_units = sorted({row.unit_name for row in workload_rows})
         available_models = sorted({row.model_key for row in workload_rows if row.model_key})
@@ -256,6 +256,11 @@ with opt_tab:
                 value=0.0,
                 step=100.0,
             )
+            throughput_aware = st.checkbox(
+                "Throughput-aware ranking",
+                value=True,
+                help="Uses throughput metadata to estimate required replicas when available.",
+            )
             with st.expander("Advanced options", expanded=False):
                 comparator_mode = st.selectbox(
                     "Comparator",
@@ -271,6 +276,26 @@ with opt_tab:
                     "Confidence-weighted ranking",
                     value=True,
                     help="Apply a penalty to lower-confidence data before ranking.",
+                )
+                peak_to_avg = st.number_input(
+                    "Peak-to-average multiplier",
+                    min_value=1.0,
+                    value=2.5,
+                    step=0.1,
+                    help="Used to estimate peak demand from monthly usage.",
+                )
+                util_target = st.number_input(
+                    "Target utilization",
+                    min_value=0.3,
+                    max_value=0.95,
+                    value=0.75,
+                    step=0.05,
+                    help="Lower target means more headroom and more replicas.",
+                )
+                strict_capacity_check = st.checkbox(
+                    "Strict capacity check",
+                    value=False,
+                    help="Exclude offers that do not have throughput metadata in throughput-aware mode.",
                 )
             non_llm_submit = st.form_submit_button("Get Top 10 Offers")
 
@@ -289,6 +314,10 @@ with opt_tab:
                 confidence_weighted=confidence_weighted,
                 workload_type=selected_workload,
                 monthly_usage=float(monthly_usage),
+                throughput_aware=throughput_aware,
+                peak_to_avg=float(peak_to_avg),
+                util_target=float(util_target),
+                strict_capacity_check=strict_capacity_check,
             )
             if excluded_offer_count > 0:
                 st.warning(
@@ -314,6 +343,8 @@ with opt_tab:
                                 if ranked_row.monthly_estimate_usd is not None
                                 else None
                             ),
+                            "replicas": ranked_row.required_replicas,
+                            "capacity_check": ranked_row.capacity_check,
                         }
                     )
                 try:
