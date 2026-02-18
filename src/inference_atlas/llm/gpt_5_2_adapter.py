@@ -73,6 +73,35 @@ class GPT52Adapter(LLMAdapter):
             return output_text.strip()
         raise RuntimeError("OpenAI response did not contain text output.")
 
+    def _chat_completions_text(self, system_prompt: str, user_prompt: str, model: str) -> str:
+        response = self.client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            timeout=self.timeout_sec,
+        )
+        choices = getattr(response, "choices", None)
+        if not choices:
+            raise RuntimeError("OpenAI chat completion response did not contain choices.")
+        message = getattr(choices[0], "message", None)
+        if message is None:
+            raise RuntimeError("OpenAI chat completion did not contain a message.")
+        content = getattr(message, "content", None)
+        if isinstance(content, str) and content.strip():
+            return content.strip()
+        if isinstance(content, list):
+            text_chunks = [
+                str(getattr(item, "text", "")).strip()
+                for item in content
+                if getattr(item, "text", None)
+            ]
+            joined = "\n".join(chunk for chunk in text_chunks if chunk)
+            if joined:
+                return joined
+        raise RuntimeError("OpenAI chat completion response did not contain text output.")
+
     def _generate_text(self, system_prompt: str, user_prompt: str) -> str:
         last_error: Optional[Exception] = None
         for model_name in self._model_candidates:
@@ -82,6 +111,12 @@ class GPT52Adapter(LLMAdapter):
                 raise RuntimeError("OpenAI rate limit exceeded. Please retry shortly.") from exc
             except Exception as exc:  # noqa: BLE001 - fallback model probing
                 last_error = exc
+                try:
+                    return self._chat_completions_text(system_prompt, user_prompt, model_name)
+                except RateLimitError as chat_exc:
+                    raise RuntimeError("OpenAI rate limit exceeded. Please retry shortly.") from chat_exc
+                except Exception as chat_exc:  # noqa: BLE001
+                    last_error = chat_exc
                 continue
         raise RuntimeError(f"OpenAI request failed: {last_error}")
 

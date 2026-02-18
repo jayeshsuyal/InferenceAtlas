@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from types import SimpleNamespace
 
 import pytest
 
@@ -85,6 +86,27 @@ def test_opus_missing_key_raises() -> None:
 def test_gpt_constructor_validates_timeout() -> None:
     with pytest.raises(ValueError, match="timeout_sec must be > 0"):
         GPT52Adapter(api_key="x", timeout_sec=0, client=object())
+
+
+def test_gpt_generate_text_falls_back_to_chat_completions() -> None:
+    class _Responses:
+        @staticmethod
+        def create(**_kwargs: object) -> object:
+            raise RuntimeError("responses api unavailable")
+
+    class _Completions:
+        @staticmethod
+        def create(**_kwargs: object) -> object:
+            return SimpleNamespace(
+                choices=[SimpleNamespace(message=SimpleNamespace(content="fallback text"))]
+            )
+
+    client = SimpleNamespace(
+        responses=_Responses(),
+        chat=SimpleNamespace(completions=_Completions()),
+    )
+    adapter = GPT52Adapter(api_key="test-key", client=client)
+    assert adapter._generate_text("sys", "user") == "fallback text"
 
 
 def test_opus_constructor_validates_timeout() -> None:
