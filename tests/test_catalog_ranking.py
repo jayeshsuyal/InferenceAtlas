@@ -219,6 +219,47 @@ def test_monthly_budget_filter_uses_listed_unit_price_not_normalized_comparator(
     assert ranked_tight_budget == []
 
 
+def test_normalized_mode_with_specific_unit_falls_back_to_same_unit_price() -> None:
+    rows = [
+        SimpleNamespace(
+            provider="vision_a",
+            unit_name="video_min",
+            unit_price_usd=20.0,
+            confidence="high",
+            sku_name="vision-a",
+            billing_mode="per_minute",
+            throughput_value=None,
+            throughput_unit=None,
+        ),
+        SimpleNamespace(
+            provider="vision_b",
+            unit_name="video_min",
+            unit_price_usd=30.0,
+            confidence="high",
+            sku_name="vision-b",
+            billing_mode="per_minute",
+            throughput_value=None,
+            throughput_unit=None,
+        ),
+    ]
+    ranked, reasons, excluded = rank_catalog_offers(
+        rows=rows,
+        allowed_providers={"vision_a", "vision_b"},
+        unit_name="video_min",
+        top_k=5,
+        monthly_budget_max_usd=500.0,
+        comparator_mode="normalized",
+        confidence_weighted=False,
+        workload_type="vision",
+        monthly_usage=4.0,
+        throughput_aware=True,
+        strict_capacity_check=False,
+    )
+    assert excluded == 0
+    assert [r.provider for r in ranked] == ["vision_a", "vision_b"]
+    assert reasons["vision_a"].startswith("Included")
+
+
 def test_build_provider_diagnostics_included_excluded() -> None:
     diagnostics = build_provider_diagnostics(
         workload_provider_ids=["a", "b", "c"],

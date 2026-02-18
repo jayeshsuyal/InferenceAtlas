@@ -134,6 +134,9 @@ def rank_catalog_offers(
                 unit_name=row.unit_name,
                 workload_type=workload_type,
             )
+            if comparator_mode == "normalized" and normalized_price is None and unit_name is not None:
+                # If user already filtered to a single unit, direct same-unit comparison is valid.
+                normalized_price = row.unit_price_usd
             if comparator_mode == "normalized" and normalized_price is None:
                 excluded_offer_count += 1
                 continue
