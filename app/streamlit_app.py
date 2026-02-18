@@ -96,6 +96,16 @@ def _format_model_label(model_key: str) -> str:
     return key
 
 
+def _risk_badge(total_risk: float | None) -> str:
+    if total_risk is None:
+        return "N/A"
+    if total_risk < 0.3:
+        return "Low"
+    if total_risk < 0.6:
+        return "Medium"
+    return "High"
+
+
 def _build_ai_context_workload() -> WorkloadSpec:
     """Build a safe fallback workload context for AI explanation helper."""
     return WorkloadSpec(
@@ -326,6 +336,7 @@ with opt_tab:
             if not ranked:
                 st.warning("No offers matched the selected providers/unit/budget filter.")
             else:
+                st.subheader("Top Recommendations")
                 table_rows = []
                 for idx, ranked_row in enumerate(ranked, start=1):
                     table_rows.append(
@@ -334,9 +345,9 @@ with opt_tab:
                             "provider": ranked_row.provider,
                             "offering": ranked_row.offering,
                             "billing": ranked_row.billing,
-                            "listed_unit_price": ranked_row.listed_unit_price,
-                            "comparator_price": round(ranked_row.comparator_price, 8),
-                            "unit_name": ranked_row.unit_name,
+                            "unit_price_usd": round(ranked_row.listed_unit_price, 8),
+                            "normalized_price": round(ranked_row.comparator_price, 8),
+                            "unit": ranked_row.unit_name,
                             "confidence": ranked_row.confidence,
                             "monthly_estimate_usd": (
                                 round(ranked_row.monthly_estimate_usd, 2)
@@ -345,6 +356,7 @@ with opt_tab:
                             ),
                             "replicas": ranked_row.required_replicas,
                             "capacity_check": ranked_row.capacity_check,
+                            "risk": "N/A",
                         }
                     )
                 try:
@@ -551,34 +563,54 @@ with opt_tab:
             if last_budget > 0:
                 st.caption(f"Budget filter: <= ${last_budget:,.0f}/month")
 
+            llm_rows = []
             for plan in ranked:
-                with st.container():
-                    c1, c2 = st.columns([3, 1])
-                    with c1:
-                        st.markdown(f"### {plan.rank}. {plan.provider_name} - {plan.offering_id}")
-                    with c2:
-                        st.metric("Monthly Cost", f"${plan.monthly_cost_usd:,.0f}")
-                        st.metric("Confidence", plan.confidence)
+                llm_rows.append(
+                    {
+                        "rank": plan.rank,
+                        "provider": plan.provider_name,
+                        "offering": plan.offering_id,
+                        "billing": plan.billing_mode,
+                        "unit_price_usd": None,
+                        "normalized_price": None,
+                        "unit": None,
+                        "confidence": plan.confidence,
+                        "monthly_estimate_usd": round(plan.monthly_cost_usd, 2),
+                        "replicas": plan.gpu_count,
+                        "capacity_check": (
+                            f"{plan.utilization_at_peak * 100:.0f}% peak util"
+                            if plan.utilization_at_peak is not None
+                            else None
+                        ),
+                        "risk": _risk_badge(plan.risk.total_risk),
+                    }
+                )
+            try:
+                st.dataframe(llm_rows, use_container_width=True, hide_index=True)
+            except TypeError:
+                st.dataframe(llm_rows)
 
+            assumption_labels = {
+                "alpha": "Risk weight (alpha)",
+                "output_token_ratio": "Output token ratio",
+                "peak_to_avg": "Peak-to-average traffic multiplier",
+                "scaling_beta": "Multi-GPU scaling penalty (beta)",
+                "util_target": "Target utilization",
+            }
+            with st.expander("Why this? / Assumptions", expanded=False):
+                for plan in ranked:
+                    st.markdown(f"**{plan.rank}. {plan.provider_name} - {plan.offering_id}**")
+                    st.caption(f"Why this won: {plan.why}")
+                    for key, value in sorted(plan.assumptions.items()):
+                        label = assumption_labels.get(key, key.replace("_", " ").title())
+                        st.caption(f"- {label}: `{value}`")
+                    st.caption(
+                        f"- Risk: `{_risk_badge(plan.risk.total_risk)}` "
+                        f"(total={plan.risk.total_risk:.2f})"
+                    )
                     if plan.utilization_at_peak is not None:
-                        st.progress(min(max(plan.utilization_at_peak, 0.0), 1.0))
-                        st.caption(f"Peak utilization: {plan.utilization_at_peak * 100:.0f}%")
-
-                    if plan.risk.total_risk < 0.3:
-                        st.success("Risk: Low")
-                    elif plan.risk.total_risk < 0.6:
-                        st.warning("Risk: Medium")
-                    else:
-                        st.error("Risk: High")
-
-                    with st.expander("Why this? / Assumptions", expanded=False):
-                        st.caption(plan.why)
-                        assumptions_line = ", ".join(
-                            f"{key}={value}"
-                            for key, value in sorted(plan.assumptions.items())
-                        )
-                        st.caption(f"Assumptions: {assumptions_line}")
-                st.markdown("---")
+                        st.caption(f"- Peak utilization: `{plan.utilization_at_peak * 100:.0f}%`")
+                    st.markdown("---")
         else:
             st.info("Set LLM inputs and click Get Top 10 Recommendations.")
 
