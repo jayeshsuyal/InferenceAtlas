@@ -1,6 +1,6 @@
 /**
  * Service layer — all backend calls go through here.
- * Swap USE_MOCK = false and set VITE_API_BASE_URL to connect a real API.
+ * Set VITE_USE_MOCK_API=true for mock mode, false for real backend.
  */
 
 import type {
@@ -22,7 +22,7 @@ import {
   MOCK_AI_RESPONSES,
 } from './mockData'
 
-const USE_MOCK = true
+const USE_MOCK = (import.meta.env.VITE_USE_MOCK_API ?? 'true').toLowerCase() !== 'false'
 const BASE = import.meta.env.VITE_API_BASE_URL ?? ''
 
 function delay(ms = 600): Promise<void> {
