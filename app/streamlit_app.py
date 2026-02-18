@@ -114,6 +114,25 @@ def _risk_badge(total_risk: float | None) -> str:
     return "High"
 
 
+def _usage_unit_hint(unit_name: str) -> str:
+    unit = unit_name.strip().lower()
+    if unit.startswith("1k_") or unit == "per_1k_searches":
+        return (
+            f"Usage is in `{unit_name}` blocks. Example: 1000 base units = `1` in this field."
+        )
+    if unit.startswith("1m_"):
+        return (
+            f"Usage is in `{unit_name}` blocks. Example: 1,000,000 base units = `1` in this field."
+        )
+    if unit in {"audio_min", "per_minute", "video_min"}:
+        return "Usage is in minutes."
+    if unit in {"audio_hour", "gpu_hour"}:
+        return "Usage is in hours."
+    if unit in {"image", "per_image", "generation", "video"}:
+        return "Usage is count-based (number of items)."
+    return f"Usage is measured in `{unit_name}`."
+
+
 def _build_ai_context_workload() -> WorkloadSpec:
     """Build a safe fallback workload context for AI explanation helper."""
     return WorkloadSpec(
@@ -280,6 +299,8 @@ with opt_tab:
                 options=["All units", *available_units],
                 help="Cross-unit normalization is not implemented yet. Filter by a single unit for clean comparisons.",
             )
+            if selected_unit != "All units":
+                st.caption(_usage_unit_hint(selected_unit))
             monthly_usage = st.number_input(
                 "Monthly usage estimate (requires unit filter)",
                 min_value=0.0,
@@ -376,6 +397,32 @@ with opt_tab:
                 )
             if not ranked:
                 st.warning("No offers matched the selected providers/unit/budget filter.")
+                if (
+                    unit_filter is not None
+                    and effective_monthly_usage > 0
+                    and effective_budget > 0
+                ):
+                    baseline_ranked, _, _ = rank_catalog_offers(
+                        rows=rows_for_rank,
+                        allowed_providers=set(selected_global_providers),
+                        unit_name=unit_filter,
+                        top_k=1,
+                        monthly_budget_max_usd=0.0,
+                        comparator_mode=comparator_mode,
+                        confidence_weighted=confidence_weighted,
+                        workload_type=selected_workload,
+                        monthly_usage=effective_monthly_usage,
+                        throughput_aware=throughput_aware,
+                        peak_to_avg=float(peak_to_avg),
+                        util_target=float(util_target),
+                        strict_capacity_check=strict_capacity_check,
+                    )
+                    if baseline_ranked and baseline_ranked[0].monthly_estimate_usd is not None:
+                        min_monthly = baseline_ranked[0].monthly_estimate_usd
+                        st.info(
+                            f"At this usage, the lowest estimated monthly cost is "
+                            f"`~${min_monthly:,.2f}`. Increase budget or lower usage."
+                        )
             else:
                 st.subheader("Top Recommendations")
                 table_rows = []
