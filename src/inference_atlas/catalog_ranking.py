@@ -147,8 +147,10 @@ def rank_catalog_offers(
             if confidence_weighted:
                 effective_price *= confidence_multiplier(row.confidence)
 
+            # Monthly estimate/budget checks should stay in the row's listed billing unit.
+            # Comparator price is for ranking order only.
             monthly_estimate: float | None = (
-                (monthly_usage * effective_price) if monthly_usage > 0 else None
+                (monthly_usage * row.unit_price_usd) if monthly_usage > 0 else None
             )
             required_replicas: int | None = None
             capacity_check: str | None = None

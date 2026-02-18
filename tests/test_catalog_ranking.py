@@ -178,6 +178,47 @@ def test_rank_catalog_offers_strict_capacity_check_excludes_missing_throughput()
     assert reasons["a"].startswith("Excluded by strict capacity check")
 
 
+def test_monthly_budget_filter_uses_listed_unit_price_not_normalized_comparator() -> None:
+    rows = [
+        SimpleNamespace(
+            provider="a",
+            unit_name="audio_min",
+            unit_price_usd=0.2,
+            confidence="high",
+            sku_name="a-stt",
+            billing_mode="per_unit",
+            throughput_value=None,
+            throughput_unit=None,
+        ),
+    ]
+    ranked, _, _ = rank_catalog_offers(
+        rows=rows,
+        allowed_providers={"a"},
+        unit_name="audio_min",
+        top_k=5,
+        monthly_budget_max_usd=5.0,
+        comparator_mode="normalized",
+        confidence_weighted=False,
+        workload_type="speech_to_text",
+        monthly_usage=10.0,
+    )
+    assert len(ranked) == 1
+    assert ranked[0].monthly_estimate_usd == pytest.approx(2.0)
+
+    ranked_tight_budget, _, _ = rank_catalog_offers(
+        rows=rows,
+        allowed_providers={"a"},
+        unit_name="audio_min",
+        top_k=5,
+        monthly_budget_max_usd=1.0,
+        comparator_mode="normalized",
+        confidence_weighted=False,
+        workload_type="speech_to_text",
+        monthly_usage=10.0,
+    )
+    assert ranked_tight_budget == []
+
+
 def test_build_provider_diagnostics_included_excluded() -> None:
     diagnostics = build_provider_diagnostics(
         workload_provider_ids=["a", "b", "c"],
