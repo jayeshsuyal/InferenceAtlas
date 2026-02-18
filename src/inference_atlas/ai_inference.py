@@ -6,6 +6,32 @@ import re
 from difflib import SequenceMatcher
 from typing import Iterable
 
+STOPWORDS = {
+    "a",
+    "an",
+    "and",
+    "are",
+    "for",
+    "from",
+    "get",
+    "give",
+    "i",
+    "is",
+    "low",
+    "me",
+    "model",
+    "models",
+    "need",
+    "of",
+    "on",
+    "or",
+    "personal",
+    "project",
+    "the",
+    "to",
+    "with",
+}
+
 
 WORKLOAD_KEYWORDS: dict[str, list[str]] = {
     "speech_to_text": [
@@ -33,7 +59,7 @@ def _normalize_text(text: str) -> str:
 
 def _tokenize(text: str) -> list[str]:
     normalized = _normalize_text(text)
-    return [token for token in normalized.split() if token]
+    return [token for token in normalized.split() if token and token not in STOPWORDS]
 
 
 def _best_token_similarity(query_tokens: list[str], keyword_tokens: list[str]) -> float:
@@ -46,6 +72,21 @@ def _best_token_similarity(query_tokens: list[str], keyword_tokens: list[str]) -
             if score > best:
                 best = score
     return best
+
+
+def _phrase_token_similarity(query_tokens: list[str], keyword_tokens: list[str]) -> float:
+    """Score phrase match by averaging best similarity per keyword token."""
+    if not query_tokens or not keyword_tokens:
+        return 0.0
+    scores: list[float] = []
+    for keyword_token in keyword_tokens:
+        best = 0.0
+        for query_token in query_tokens:
+            sim = SequenceMatcher(None, keyword_token, query_token).ratio()
+            if sim > best:
+                best = sim
+        scores.append(best)
+    return sum(scores) / len(scores)
 
 
 def infer_workload_from_text(
@@ -87,6 +128,14 @@ def infer_workload_from_text(
                     workload_score = max(workload_score, 0.75)
                 elif fuzzy >= 0.84:
                     workload_score = max(workload_score, 0.62)
+
+                phrase_similarity = _phrase_token_similarity(query_tokens, keyword_tokens)
+                if phrase_similarity >= 0.9:
+                    workload_score = max(workload_score, 0.9)
+                elif phrase_similarity >= 0.82:
+                    workload_score = max(workload_score, 0.78)
+                elif phrase_similarity >= 0.74:
+                    workload_score = max(workload_score, 0.68)
 
         if workload_score > best_score:
             best_score = workload_score

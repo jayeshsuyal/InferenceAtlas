@@ -33,9 +33,37 @@ def test_infer_workload_from_text_detects_stt_with_common_typo() -> None:
     assert inferred == "speech_to_text"
 
 
+def test_infer_workload_from_text_detects_stt_with_spich_typo() -> None:
+    inferred = infer_workload_from_text(
+        "give me a spich to text model for low cost personal project",
+        "llm",
+    )
+    assert inferred == "speech_to_text"
+
+
 def test_infer_workload_from_text_detects_embeddings_typo() -> None:
     inferred = infer_workload_from_text("need embeding model for retrieval", "llm")
     assert inferred == "embeddings"
+
+
+def test_infer_workload_from_text_detects_tts() -> None:
+    inferred = infer_workload_from_text("best tts for a small app", "llm")
+    assert inferred == "text_to_speech"
+
+
+def test_infer_workload_from_text_detects_vision_typo() -> None:
+    inferred = infer_workload_from_text("need a visiom api for OCR", "llm")
+    assert inferred == "vision"
+
+
+def test_infer_workload_from_text_detects_image_generation() -> None:
+    inferred = infer_workload_from_text("cheap text to image options", "llm")
+    assert inferred == "image_generation"
+
+
+def test_infer_workload_from_text_detects_moderation_typo() -> None:
+    inferred = infer_workload_from_text("need moderatiom filter api", "llm")
+    assert inferred == "moderation"
 
 
 def test_infer_workload_from_text_ambiguous_defaults_to_selected() -> None:
