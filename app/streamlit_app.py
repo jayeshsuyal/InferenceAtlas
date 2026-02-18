@@ -376,6 +376,21 @@ with opt_tab:
             rows_for_rank = workload_rows
             if selected_model != "All models":
                 rows_for_rank = [row for row in workload_rows if row.model_key == selected_model]
+            if unit_filter is not None:
+                rows_for_rank = [row for row in rows_for_rank if row.unit_name == unit_filter]
+            effective_strict_capacity_check = strict_capacity_check
+            if (
+                throughput_aware
+                and effective_strict_capacity_check
+                and effective_monthly_usage > 0
+                and rows_for_rank
+                and all(getattr(row, "throughput_value", None) in (None, 0, 0.0) for row in rows_for_rank)
+            ):
+                st.warning(
+                    "Strict capacity check was disabled for this run because selected offers "
+                    "do not include throughput metadata."
+                )
+                effective_strict_capacity_check = False
             ranked, provider_reasons, excluded_offer_count = rank_catalog_offers(
                 rows=rows_for_rank,
                 allowed_providers=set(selected_global_providers),
@@ -389,7 +404,7 @@ with opt_tab:
                 throughput_aware=throughput_aware,
                 peak_to_avg=float(peak_to_avg),
                 util_target=float(util_target),
-                strict_capacity_check=strict_capacity_check,
+                strict_capacity_check=effective_strict_capacity_check,
             )
             if excluded_offer_count > 0:
                 st.warning(
@@ -415,7 +430,7 @@ with opt_tab:
                         throughput_aware=throughput_aware,
                         peak_to_avg=float(peak_to_avg),
                         util_target=float(util_target),
-                        strict_capacity_check=strict_capacity_check,
+                        strict_capacity_check=effective_strict_capacity_check,
                     )
                     if baseline_ranked and baseline_ranked[0].monthly_estimate_usd is not None:
                         min_monthly = baseline_ranked[0].monthly_estimate_usd
