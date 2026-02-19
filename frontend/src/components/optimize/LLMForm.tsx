@@ -28,10 +28,14 @@ export function LLMForm({ onSubmit, loading }: LLMFormProps) {
     defaultValues: {
       tokens_per_day: 5_000_000,
       model_bucket: '70b',
-      provider_ids: ['fireworks', 'together', 'groq', 'aws'],
+      provider_ids: ['fireworks', 'together_ai', 'openai', 'anthropic'],
       traffic_pattern: 'business_hours',
       peak_to_avg: 2.5,
       util_target: 0.75,
+      beta: 0.08,
+      alpha: 1.0,
+      autoscale_inefficiency: 1.15,
+      monthly_budget_max_usd: 0,
       output_token_ratio: 0.3,
       top_k: 5,
     },
@@ -215,6 +219,42 @@ export function LLMForm({ onSubmit, loading }: LLMFormProps) {
                   type="number"
                   step="0.05"
                   {...register('output_token_ratio', { valueAsNumber: true })}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="beta">Scaling beta</Label>
+                <Input
+                  id="beta"
+                  type="number"
+                  step="0.01"
+                  {...register('beta', { valueAsNumber: true })}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="alpha">Risk alpha</Label>
+                <Input
+                  id="alpha"
+                  type="number"
+                  step="0.1"
+                  {...register('alpha', { valueAsNumber: true })}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="autoscale_inefficiency">Autoscale inefficiency</Label>
+                <Input
+                  id="autoscale_inefficiency"
+                  type="number"
+                  step="0.01"
+                  {...register('autoscale_inefficiency', { valueAsNumber: true })}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="monthly_budget_max_usd">Monthly budget (0 = none)</Label>
+                <Input
+                  id="monthly_budget_max_usd"
+                  type="number"
+                  step="0.01"
+                  {...register('monthly_budget_max_usd', { valueAsNumber: true })}
                 />
               </div>
               <div className="space-y-1">

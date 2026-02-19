@@ -15,6 +15,10 @@ export const llmFormSchema = z.object({
   // Advanced
   peak_to_avg: z.number().min(1).max(10).default(2.5),
   util_target: z.number().min(0.1).max(0.99).default(0.75),
+  beta: z.number().min(0).max(1).default(0.08),
+  alpha: z.number().min(0).max(5).default(1.0),
+  autoscale_inefficiency: z.number().min(1).max(2).default(1.15),
+  monthly_budget_max_usd: z.number().min(0).default(0),
   output_token_ratio: z.number().min(0).max(1).default(0.3),
   top_k: z.number().int().min(1).max(20).default(5),
 })

@@ -465,6 +465,7 @@ def rank_configs(
     beta: float = DEFAULT_SCALING_BETA,
     alpha: float = DEFAULT_ALPHA,
     autoscale_inefficiency: float = DEFAULT_AUTOSCALE_INEFFICIENCY,
+    monthly_budget_max_usd: float = 0.0,
     top_k: int = 10,
     provider_ids: set[str] | None = None,
     output_token_ratio: float = DEFAULT_OUTPUT_TOKEN_RATIO,
@@ -472,6 +473,8 @@ def rank_configs(
     """Run full MVP ranking pipeline and return top-k plans."""
     if top_k < 1:
         raise ValueError("top_k must be >= 1")
+    if monthly_budget_max_usd < 0:
+        raise ValueError("monthly_budget_max_usd must be >= 0")
     if not 0 <= output_token_ratio <= 1:
         raise ValueError("output_token_ratio must be between 0 and 1")
 
@@ -506,6 +509,8 @@ def rank_configs(
             cap=cap,
             autoscale_inefficiency=autoscale_inefficiency,
         )
+        if monthly_budget_max_usd > 0 and monthly > monthly_budget_max_usd:
+            continue
         provided = cap.tok_s_total if cap is not None else cfg.tps_cap
         risk = risk_score(
             cfg=cfg,
@@ -554,6 +559,7 @@ def rank_configs(
                     "scaling_beta": beta,
                     "alpha": alpha,
                     "output_token_ratio": output_token_ratio,
+                    "monthly_budget_max_usd": monthly_budget_max_usd,
                 },
             )
         )

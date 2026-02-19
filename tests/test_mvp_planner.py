@@ -155,3 +155,29 @@ def test_rank_configs_returns_sorted_results() -> None:
         ("required" in row.why) or ("throughput cap unspecified" in row.why)
         for row in plans
     )
+
+
+def test_rank_configs_applies_monthly_budget_filter() -> None:
+    baseline = rank_configs(tokens_per_day=8_000_000, model_bucket="70b", top_k=5)
+    budget = baseline[0].monthly_cost_usd
+
+    filtered = rank_configs(
+        tokens_per_day=8_000_000,
+        model_bucket="70b",
+        top_k=5,
+        monthly_budget_max_usd=budget,
+    )
+
+    assert filtered
+    assert len(filtered) <= len(baseline)
+    assert all(plan.monthly_cost_usd <= budget for plan in filtered)
+
+
+def test_rank_configs_raises_when_budget_excludes_all() -> None:
+    with pytest.raises(ValueError, match="No feasible configurations found"):
+        rank_configs(
+            tokens_per_day=8_000_000,
+            model_bucket="70b",
+            top_k=5,
+            monthly_budget_max_usd=0.000001,
+        )

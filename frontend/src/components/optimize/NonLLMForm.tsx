@@ -11,7 +11,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import { nonLLMFormSchema, type NonLLMFormValues } from '@/schemas/forms'
-import { PROVIDERS, UNIT_NAMES } from '@/lib/constants'
+import { PROVIDERS, UNIT_NAMES, WORKLOAD_UNIT_OPTIONS } from '@/lib/constants'
 
 interface NonLLMFormProps {
   workloadType: string
@@ -50,6 +50,8 @@ export function NonLLMForm({ workloadType, onSubmit, loading }: NonLLMFormProps)
   const budget = watch('monthly_budget_max_usd')
   const throughputAware = watch('throughput_aware')
   const selectedProviders = watch('provider_ids')
+  const workloadUnitIds = WORKLOAD_UNIT_OPTIONS[workloadType as keyof typeof WORKLOAD_UNIT_OPTIONS] ?? []
+  const workloadUnits = UNIT_NAMES.filter((u) => workloadUnitIds.includes(u.id))
 
   // Warn: budget set but unit is null
   const showUnitWarning = budget > 0 && unitName === null
@@ -78,12 +80,12 @@ export function NonLLMForm({ workloadType, onSubmit, loading }: NonLLMFormProps)
               value={field.value ?? '__all__'}
               onValueChange={(v) => field.onChange(v === '__all__' ? null : v)}
             >
-              <SelectTrigger>
-                <SelectValue placeholder="All units (browse mode)" />
+                <SelectTrigger>
+                <SelectValue placeholder="All units for this workload" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="__all__">All units (browse mode)</SelectItem>
-                {UNIT_NAMES.map((u) => (
+                <SelectItem value="__all__">All units for this workload</SelectItem>
+                {workloadUnits.map((u) => (
                   <SelectItem key={u.id} value={u.id}>{u.label}</SelectItem>
                 ))}
               </SelectContent>

@@ -52,6 +52,10 @@ export function OptimizePage() {
         provider_ids: values.provider_ids,
         peak_to_avg: values.peak_to_avg,
         util_target: values.util_target,
+        beta: values.beta,
+        alpha: values.alpha,
+        autoscale_inefficiency: values.autoscale_inefficiency,
+        monthly_budget_max_usd: values.monthly_budget_max_usd,
         output_token_ratio: values.output_token_ratio,
         top_k: values.top_k,
       })

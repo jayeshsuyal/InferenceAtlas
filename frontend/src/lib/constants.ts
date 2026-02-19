@@ -74,9 +74,22 @@ export const TRAFFIC_PATTERNS = [
 ] as const
 
 export const PROVIDERS = [
-  'anthropic', 'openai', 'google', 'aws', 'azure', 'fireworks',
-  'together', 'groq', 'deepgram', 'assemblyai', 'elevenlabs',
-  'stability', 'replicate', 'cohere', 'mistral', 'deepinfra',
+  'anthropic',
+  'assemblyai',
+  'aws_rekognition',
+  'baseten',
+  'cohere',
+  'deepgram',
+  'elevenlabs',
+  'fal_ai',
+  'fireworks',
+  'google_cloud',
+  'modal',
+  'openai',
+  'replicate',
+  'runpod',
+  'together_ai',
+  'voyage_ai',
 ] as const
 
 export const UNIT_NAMES = [
@@ -85,12 +98,34 @@ export const UNIT_NAMES = [
   { id: '1k_chars', label: '1K Characters' },
   { id: '1m_chars', label: '1M Characters' },
   { id: 'image', label: 'Per Image' },
+  { id: '1k_images', label: '1K Images' },
   { id: '1k_tokens', label: '1K Tokens' },
   { id: '1m_tokens', label: '1M Tokens' },
   { id: 'request', label: 'Per Request' },
   { id: 'second', label: 'Per Second' },
   { id: 'minute', label: 'Per Minute' },
   { id: 'hour', label: 'Per Hour' },
+  { id: 'per_minute', label: 'Per Minute (Alt)' },
+  { id: 'per_second', label: 'Per Second (Alt)' },
+  { id: 'per_image', label: 'Per Image (Alt)' },
+  { id: 'megapixel', label: 'Per Megapixel' },
+  { id: 'gpu_hour', label: 'GPU Hour' },
+  { id: 'gpu_second', label: 'GPU Second' },
+  { id: 'free', label: 'Free' },
+  { id: 'video', label: 'Video Unit' },
+  { id: 'video_min', label: 'Video Minute' },
+  { id: 'generation', label: 'Generation' },
 ] as const
+
+export const WORKLOAD_UNIT_OPTIONS: Record<WorkloadTypeId, string[]> = {
+  llm: ['1m_tokens', 'gpu_hour', 'gpu_second'],
+  speech_to_text: ['audio_min', 'audio_hour', 'per_minute'],
+  text_to_speech: ['1k_chars', '1m_chars', 'audio_min', 'generation', 'per_minute'],
+  embeddings: ['1m_tokens'],
+  vision: ['1k_images', '1m_tokens', 'request'],
+  image_generation: ['image', 'per_image', 'megapixel', 'gpu_hour', 'gpu_second'],
+  video_generation: ['video_min', 'per_second', 'video'],
+  moderation: ['1m_tokens', 'free'],
+}
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''

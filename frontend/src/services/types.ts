@@ -55,6 +55,10 @@ export interface LLMPlanningRequest {
   provider_ids: string[]
   peak_to_avg: number
   util_target: number
+  beta: number
+  alpha: number
+  autoscale_inefficiency: number
+  monthly_budget_max_usd: number
   output_token_ratio: number
   top_k: number
 }
