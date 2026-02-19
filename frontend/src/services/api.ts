@@ -17,15 +17,17 @@ import type {
   CopilotApplyPayload,
 } from './types'
 
-import {
-  MOCK_CATALOG_BROWSE,
-  MOCK_INVOICE_RESPONSE,
-  MOCK_AI_RESPONSES,
-} from './mockData'
-
 const USE_MOCK = (import.meta.env.VITE_USE_MOCK_API ?? 'true').toLowerCase() !== 'false'
 const BASE = import.meta.env.VITE_API_BASE_URL ?? ''
 let mockCatalogRowsCache: CatalogBrowseResponse['rows'] | null = null
+let mockModulePromise: Promise<typeof import('./mockData')> | null = null
+
+async function getMockModule(): Promise<typeof import('./mockData')> {
+  if (mockModulePromise === null) {
+    mockModulePromise = import('./mockData')
+  }
+  return mockModulePromise
+}
 
 const WORKLOAD_ALIASES: Record<string, string> = {
   llm: 'llm',
@@ -166,6 +168,9 @@ async function getMockCatalogRows(): Promise<CatalogBrowseResponse['rows']> {
         model_key?: string | null
         throughput_value?: number | null
         throughput_unit?: string | null
+        previous_unit_price_usd?: number | null
+        price_change_abs_usd?: number | null
+        price_change_pct?: number | null
       }>
     }
     const rows =
@@ -181,11 +186,15 @@ async function getMockCatalogRows(): Promise<CatalogBrowseResponse['rows']> {
         model_name: r.model_key ?? null,
         throughput_value: r.throughput_value ?? null,
         throughput_unit: r.throughput_unit ?? null,
+        previous_unit_price_usd: r.previous_unit_price_usd ?? null,
+        price_change_abs_usd: r.price_change_abs_usd ?? null,
+        price_change_pct: r.price_change_pct ?? null,
       })) ?? []
     mockCatalogRowsCache = rows
     return rows
   } catch {
-    mockCatalogRowsCache = MOCK_CATALOG_BROWSE.rows
+    const mock = await getMockModule()
+    mockCatalogRowsCache = mock.MOCK_CATALOG_BROWSE.rows
     return mockCatalogRowsCache
   }
 }
@@ -374,6 +383,9 @@ export async function rankCatalogOffers(req: CatalogRankingRequest): Promise<Cat
           monthly_estimate_usd: monthlyEstimate,
           required_replicas: requiredReplicas,
           capacity_check: capacityCheck,
+          previous_unit_price_usd: r.previous_unit_price_usd,
+          price_change_abs_usd: r.price_change_abs_usd,
+          price_change_pct: r.price_change_pct,
           _sort_price: weighted,
         }
       })
@@ -408,6 +420,9 @@ export async function rankCatalogOffers(req: CatalogRankingRequest): Promise<Cat
       monthly_estimate_usd: row.monthly_estimate_usd,
       required_replicas: row.required_replicas,
       capacity_check: row.capacity_check,
+      previous_unit_price_usd: row.previous_unit_price_usd,
+      price_change_abs_usd: row.price_change_abs_usd,
+      price_change_pct: row.price_change_pct,
     }))
 
     const diagnostics = Array.from(providerSet).map((provider) => {
@@ -460,7 +475,8 @@ export async function browseCatalog(filters?: {
 export async function analyzeInvoice(file: File): Promise<InvoiceAnalysisResponse> {
   if (USE_MOCK) {
     await delay(1200)
-    return MOCK_INVOICE_RESPONSE
+    const mock = await getMockModule()
+    return mock.MOCK_INVOICE_RESPONSE
   }
   const form = new FormData()
   form.append('file', file)
@@ -598,6 +614,7 @@ export async function nextCopilotTurn(req: CopilotTurnRequest): Promise<CopilotT
 export async function askAI(req: AIAssistRequest): Promise<AIAssistResponse> {
   if (USE_MOCK) {
     await delay(800)
+    const mock = await getMockModule()
     const msg = req.message.toLowerCase()
     const rows = await getMockCatalogRows()
     const workload = req.context.workload_type ? canonicalWorkload(req.context.workload_type) : null
@@ -621,12 +638,12 @@ export async function askAI(req: AIAssistRequest): Promise<AIAssistResponse> {
       }
     }
     if (msg.includes('cheap') || msg.includes('cost') || msg.includes('price')) {
-      return MOCK_AI_RESPONSES.cheapest!
+      return mock.MOCK_AI_RESPONSES.cheapest!
     }
     if (msg.includes('risk') || msg.includes('score') || msg.includes('confidence')) {
-      return MOCK_AI_RESPONSES.risk!
+      return mock.MOCK_AI_RESPONSES.risk!
     }
-    return MOCK_AI_RESPONSES.default!
+    return mock.MOCK_AI_RESPONSES.default!
   }
   return post<AIAssistResponse>('/api/v1/ai/assist', req)
 }

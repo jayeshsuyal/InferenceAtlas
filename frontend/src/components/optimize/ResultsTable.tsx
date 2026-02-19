@@ -1,9 +1,14 @@
-import { useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import { ChevronDown, ChevronUp, Info, Trophy } from 'lucide-react'
 import { cn, formatUSD, formatPercent, riskLevel, confidenceLabel, billingModeLabel, capacityLabel } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import type { RankedPlan, RankedCatalogOffer, ProviderDiagnostic } from '@/services/types'
 import { ASSUMPTION_LABELS } from '@/lib/constants'
+const InsightsCharts = lazy(() =>
+  import('@/components/optimize/InsightsCharts').then((module) => ({
+    default: module.InsightsCharts,
+  }))
+)
 
 // ─── Confidence badge ─────────────────────────────────────────────────────────
 
@@ -274,6 +279,17 @@ export function ResultsTable({
           <span>· {excludedCount} excluded</span>
         )}
       </div>
+
+      {/* Insights */}
+      <Suspense
+        fallback={
+          <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4 text-xs text-zinc-500">
+            Loading insights…
+          </div>
+        }
+      >
+        <InsightsCharts mode={mode} plans={plans} offers={offers} />
+      </Suspense>
 
       {/* Results */}
       {mode === 'llm'

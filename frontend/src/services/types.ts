@@ -84,6 +84,9 @@ export interface RankedCatalogOffer {
   monthly_estimate_usd: number | null
   required_replicas: number | null
   capacity_check: CapacityCheck
+  previous_unit_price_usd?: number | null
+  price_change_abs_usd?: number | null
+  price_change_pct?: number | null
 }
 
 export interface CatalogRankingRequest {
@@ -122,6 +125,9 @@ export interface CatalogRow {
   model_name: string | null
   throughput_value: number | null
   throughput_unit: string | null
+  previous_unit_price_usd?: number | null
+  price_change_abs_usd?: number | null
+  price_change_pct?: number | null
 }
 
 export interface CatalogBrowseResponse {
