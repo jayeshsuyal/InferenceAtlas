@@ -18,6 +18,7 @@ from inference_atlas.catalog_ranking import (
     RankedCatalogOffer,
     build_provider_diagnostics,
     confidence_multiplier,
+    get_catalog_tuning_preset,
     normalize_unit_price_for_workload,
     rank_catalog_offers,
 )
@@ -62,6 +63,7 @@ from inference_atlas.mvp_planner import (
     enumerate_configs,
     enumerate_configs_for_providers,
     get_provider_compatibility,
+    get_tuning_preset,
     normalize_workload,
     rank_configs,
     risk_score,
@@ -117,6 +119,7 @@ __all__ = [
     "compute_monthly_cost",
     "risk_score",
     "rank_configs",
+    "get_tuning_preset",
     "NormalizedWorkload",
     "CapacityEstimate",
     "PlannerConfig",
@@ -140,6 +143,7 @@ __all__ = [
     "normalize_unit_price_for_workload",
     "confidence_multiplier",
     "rank_catalog_offers",
+    "get_catalog_tuning_preset",
     "build_provider_diagnostics",
     "RankedCatalogOffer",
 ]

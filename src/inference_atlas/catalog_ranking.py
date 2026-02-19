@@ -19,9 +19,48 @@ class RankedCatalogOffer:
     unit_name: str
     confidence: str
     monthly_estimate_usd: float | None
+    score: float
+    risk_overload: float
+    risk_complexity: float
+    total_risk: float
     required_replicas: int | None = None
     capacity_check: str | None = None
     exclusion_reason: str | None = None
+
+
+CATALOG_TUNING_PRESETS: dict[str, dict[str, dict[str, float]]] = {
+    "default": {
+        "conservative": {"peak_to_avg": 3.0, "util_target": 0.65, "alpha": 1.4},
+        "balanced": {"peak_to_avg": 2.5, "util_target": 0.75, "alpha": 1.0},
+        "aggressive": {"peak_to_avg": 2.0, "util_target": 0.85, "alpha": 0.7},
+    },
+    "speech_to_text": {
+        "conservative": {"peak_to_avg": 3.5, "util_target": 0.65, "alpha": 1.5},
+        "balanced": {"peak_to_avg": 2.8, "util_target": 0.75, "alpha": 1.0},
+        "aggressive": {"peak_to_avg": 2.0, "util_target": 0.85, "alpha": 0.7},
+    },
+    "text_to_speech": {
+        "conservative": {"peak_to_avg": 3.0, "util_target": 0.65, "alpha": 1.4},
+        "balanced": {"peak_to_avg": 2.5, "util_target": 0.75, "alpha": 1.0},
+        "aggressive": {"peak_to_avg": 2.0, "util_target": 0.85, "alpha": 0.7},
+    },
+    "video_generation": {
+        "conservative": {"peak_to_avg": 2.5, "util_target": 0.60, "alpha": 1.6},
+        "balanced": {"peak_to_avg": 2.0, "util_target": 0.70, "alpha": 1.2},
+        "aggressive": {"peak_to_avg": 1.6, "util_target": 0.80, "alpha": 0.8},
+    },
+}
+
+
+def get_catalog_tuning_preset(workload_type: str, name: str = "balanced") -> dict[str, float]:
+    """Return workload-aware preset for non-LLM ranking controls."""
+    workload_token = workload_type.strip().lower()
+    preset_name = name.strip().lower()
+    preset_group = CATALOG_TUNING_PRESETS.get(workload_token, CATALOG_TUNING_PRESETS["default"])
+    if preset_name not in preset_group:
+        valid = ", ".join(sorted(preset_group))
+        raise ValueError(f"Unknown preset '{name}' for workload '{workload_type}'. Valid presets: {valid}")
+    return dict(preset_group[preset_name])
 
 
 def normalize_unit_price_for_workload(
@@ -109,7 +148,27 @@ def rank_catalog_offers(
     peak_to_avg: float = 2.5,
     util_target: float = 0.75,
     strict_capacity_check: bool = False,
+    alpha: float = 1.0,
 ) -> tuple[list[RankedCatalogOffer], dict[str, str], int]:
+    if top_k < 1:
+        raise ValueError("top_k must be >= 1")
+    if monthly_budget_max_usd < 0:
+        raise ValueError("monthly_budget_max_usd must be >= 0")
+    if monthly_usage < 0:
+        raise ValueError("monthly_usage must be >= 0")
+    if comparator_mode not in {"normalized", "listed", "raw"}:
+        raise ValueError("comparator_mode must be one of: normalized, listed, raw")
+    if not 0 < util_target < 1:
+        raise ValueError("util_target must be between 0 and 1")
+    if peak_to_avg <= 0:
+        raise ValueError("peak_to_avg must be > 0")
+    if alpha < 0:
+        raise ValueError("alpha must be >= 0")
+
+    # Backward compatibility: treat "raw" as "listed".
+    if comparator_mode == "raw":
+        comparator_mode = "listed"
+
     provider_reasons: dict[str, str] = {}
     ranked_rows: list[RankedCatalogOffer] = []
     excluded_offer_count = 0
@@ -157,6 +216,8 @@ def rank_catalog_offers(
             )
             required_replicas: int | None = None
             capacity_check: str | None = None
+            risk_overload = 0.20
+            risk_complexity = 0.0
 
             if throughput_aware and monthly_usage > 0:
                 required_peak_rate_per_hour = (monthly_usage / (30.0 * 24.0)) * max(peak_to_avg, 1.0)
@@ -172,6 +233,15 @@ def rank_catalog_offers(
                             1,
                             int(math.ceil(required_capacity_per_hour / row_capacity_per_hour)),
                         )
+                        provided_capacity = row_capacity_per_hour * required_replicas
+                        margin = (provided_capacity / required_capacity_per_hour) - 1.0
+                        risk_overload = min(1.0, max(0.0, math.exp(-4.0 * margin)))
+                        replica_count = max(1, required_replicas)
+                        risk_complexity = (
+                            0.0
+                            if replica_count <= 1
+                            else min(1.0, 0.15 * math.log2(replica_count))
+                        )
                         capacity_check = (
                             f"pass ({required_replicas} replica{'s' if required_replicas != 1 else ''})"
                         )
@@ -179,13 +249,29 @@ def rank_catalog_offers(
                             monthly_estimate *= required_replicas
                     else:
                         capacity_check = "unknown throughput unit"
+                        risk_overload = 0.35
+                        risk_complexity = 0.10
                 else:
                     capacity_check = "missing throughput metadata"
+                    risk_overload = 0.35
+                    risk_complexity = 0.10
 
                 if strict_capacity_check and capacity_check and not str(capacity_check).startswith("pass"):
                     excluded_offer_count += 1
                     excluded_for_capacity += 1
                     continue
+            elif throughput_aware:
+                # Throughput-aware requested but usage is missing; keep a small uncertainty penalty.
+                risk_overload = 0.25
+                risk_complexity = 0.05
+            else:
+                # Cost-only ranking still carries a small uncertainty risk component.
+                risk_overload = 0.20
+                risk_complexity = 0.05
+
+            total_risk = (0.7 * risk_overload) + (0.3 * risk_complexity)
+            score_basis = monthly_estimate if monthly_estimate is not None else effective_price
+            score = score_basis * (1.0 + alpha * total_risk)
 
             if monthly_budget_max_usd > 0:
                 budget_value = monthly_estimate if monthly_estimate is not None else effective_price
@@ -204,6 +290,10 @@ def rank_catalog_offers(
                     unit_name=row.unit_name,
                     confidence=row.confidence,
                     monthly_estimate_usd=monthly_estimate,
+                    score=score,
+                    risk_overload=risk_overload,
+                    risk_complexity=risk_complexity,
+                    total_risk=total_risk,
                     required_replicas=required_replicas,
                     capacity_check=capacity_check,
                 )
@@ -225,12 +315,15 @@ def rank_catalog_offers(
     if monthly_usage > 0:
         ranked_rows.sort(
             key=lambda row: (
+                row.score,
                 row.monthly_estimate_usd if row.monthly_estimate_usd is not None else float("inf"),
                 row.comparator_price,
+                row.provider,
+                row.offering,
             )
         )
     else:
-        ranked_rows.sort(key=lambda row: row.comparator_price)
+        ranked_rows.sort(key=lambda row: (row.score, row.comparator_price, row.provider, row.offering))
     return ranked_rows[:top_k], provider_reasons, excluded_offer_count
 
 

@@ -16,6 +16,26 @@ DEFAULT_SCALING_BETA = 0.08
 DEFAULT_AUTOSCALE_INEFFICIENCY = 1.15
 DEFAULT_ALPHA = 1.0
 DEFAULT_OUTPUT_TOKEN_RATIO = 0.30
+TUNING_PRESETS: dict[str, dict[str, float]] = {
+    "conservative": {
+        "peak_to_avg": 3.0,
+        "util_target": 0.65,
+        "beta": 0.10,
+        "alpha": 1.4,
+    },
+    "balanced": {
+        "peak_to_avg": DEFAULT_PEAK_TO_AVG,
+        "util_target": DEFAULT_UTIL_TARGET,
+        "beta": DEFAULT_SCALING_BETA,
+        "alpha": DEFAULT_ALPHA,
+    },
+    "aggressive": {
+        "peak_to_avg": 2.0,
+        "util_target": 0.85,
+        "beta": 0.06,
+        "alpha": 0.7,
+    },
+}
 
 
 @dataclass(frozen=True)
@@ -88,6 +108,15 @@ class ProviderCompatibility:
     provider_name: str
     compatible: bool
     reason: str
+
+
+def get_tuning_preset(name: str = "balanced") -> dict[str, float]:
+    """Return a named tuning preset for advanced recommendation controls."""
+    token = name.strip().lower()
+    if token not in TUNING_PRESETS:
+        valid = ", ".join(sorted(TUNING_PRESETS))
+        raise ValueError(f"Unknown tuning preset '{name}'. Valid presets: {valid}")
+    return dict(TUNING_PRESETS[token])
 
 
 def normalize_workload(
@@ -475,6 +504,12 @@ def rank_configs(
         raise ValueError("top_k must be >= 1")
     if monthly_budget_max_usd < 0:
         raise ValueError("monthly_budget_max_usd must be >= 0")
+    if alpha < 0:
+        raise ValueError("alpha must be >= 0")
+    if beta < 0:
+        raise ValueError("beta must be >= 0")
+    if autoscale_inefficiency < 1:
+        raise ValueError("autoscale_inefficiency must be >= 1")
     if not 0 <= output_token_ratio <= 1:
         raise ValueError("output_token_ratio must be between 0 and 1")
 
@@ -567,7 +602,21 @@ def rank_configs(
     if not candidates:
         raise ValueError("No feasible configurations found for this workload/model bucket")
 
-    candidates.sort(key=lambda row: row.score)
+    def _confidence_score(conf: str) -> int:
+        try:
+            return ConfidenceLevel(conf.strip().lower()).score
+        except ValueError:
+            return 0
+
+    candidates.sort(
+        key=lambda row: (
+            row.score,
+            row.monthly_cost_usd,
+            -_confidence_score(row.confidence),
+            row.provider_id,
+            row.offering_id,
+        )
+    )
     ranked: list[RankedPlan] = []
     for idx, row in enumerate(candidates[:top_k], start=1):
         ranked.append(
