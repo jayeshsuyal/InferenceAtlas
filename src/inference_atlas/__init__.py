@@ -22,6 +22,16 @@ from inference_atlas.catalog_ranking import (
     normalize_unit_price_for_workload,
     rank_catalog_offers,
 )
+from inference_atlas.ai_copilot import (
+    build_apply_payload,
+    extract_spec_updates,
+    get_follow_up_questions,
+    get_missing_fields,
+    get_suggested_presets,
+    next_copilot_turn,
+)
+from inference_atlas.api_models import CopilotTurnRequest, CopilotTurnResponse
+from inference_atlas.api_service import run_copilot_turn
 from inference_atlas.data_loader import (
     get_catalog_v2_metadata,
     get_catalog_v2_rows,
@@ -146,4 +156,15 @@ __all__ = [
     "get_catalog_tuning_preset",
     "build_provider_diagnostics",
     "RankedCatalogOffer",
+    # AI copilot helpers
+    "extract_spec_updates",
+    "get_missing_fields",
+    "get_follow_up_questions",
+    "get_suggested_presets",
+    "build_apply_payload",
+    "next_copilot_turn",
+    # API contracts/services
+    "CopilotTurnRequest",
+    "CopilotTurnResponse",
+    "run_copilot_turn",
 ]

@@ -170,3 +170,61 @@ export interface AIAssistResponse {
   reply: string
   suggested_action: string | null
 }
+
+// ─── AI Copilot ───────────────────────────────────────────────────────────────
+
+export interface CopilotMessage {
+  role: 'user' | 'assistant'
+  content: string
+  timestamp: number
+}
+
+export interface CopilotExtractedSpec {
+  workload_type?: string
+  tokens_per_day?: number
+  model_bucket?: string
+  provider_ids?: string[]
+  traffic_pattern?: string
+  monthly_budget_max_usd?: number
+  unit_name?: string | null
+  monthly_usage?: number
+}
+
+/** Flat union of all form fields — Optimize.tsx casts to the appropriate subset. */
+export type CopilotApplyPayload = {
+  // LLM
+  tokens_per_day?: number
+  model_bucket?: string
+  provider_ids?: string[]
+  traffic_pattern?: string
+  peak_to_avg?: number
+  util_target?: number
+  beta?: number
+  alpha?: number
+  autoscale_inefficiency?: number
+  monthly_budget_max_usd?: number
+  output_token_ratio?: number
+  top_k?: number
+  // Non-LLM
+  unit_name?: string | null
+  monthly_usage?: number
+  confidence_weighted?: boolean
+  comparator_mode?: 'normalized' | 'listed'
+  throughput_aware?: boolean
+  strict_capacity_check?: boolean
+}
+
+export interface CopilotTurnRequest {
+  message: string
+  history: CopilotMessage[]
+  workload_type: string
+}
+
+export interface CopilotTurnResponse {
+  reply: string
+  extracted_spec: CopilotExtractedSpec
+  missing_fields: string[]
+  follow_up_questions: string[]
+  apply_payload: CopilotApplyPayload | null
+  is_ready: boolean
+}

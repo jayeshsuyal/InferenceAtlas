@@ -18,9 +18,10 @@ interface NonLLMFormProps {
   workloadType: string
   onSubmit: (values: NonLLMFormValues) => void
   loading: boolean
+  initialValues?: Partial<NonLLMFormValues>
 }
 
-export function NonLLMForm({ workloadType, onSubmit, loading }: NonLLMFormProps) {
+export function NonLLMForm({ workloadType, onSubmit, loading, initialValues }: NonLLMFormProps) {
   const [showAdvanced, setShowAdvanced] = useState(false)
 
   const {
@@ -44,6 +45,7 @@ export function NonLLMForm({ workloadType, onSubmit, loading }: NonLLMFormProps)
       peak_to_avg: 2.5,
       util_target: 0.75,
       strict_capacity_check: false,
+      ...initialValues,
     },
   })
 

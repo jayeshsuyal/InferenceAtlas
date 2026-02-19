@@ -13,9 +13,10 @@ import { MODEL_BUCKETS, PROVIDERS, TRAFFIC_PATTERNS } from '@/lib/constants'
 interface LLMFormProps {
   onSubmit: (values: LLMFormValues) => void
   loading: boolean
+  initialValues?: Partial<LLMFormValues>
 }
 
-export function LLMForm({ onSubmit, loading }: LLMFormProps) {
+export function LLMForm({ onSubmit, loading, initialValues }: LLMFormProps) {
   const [showAdvanced, setShowAdvanced] = useState(false)
 
   const {
@@ -39,6 +40,7 @@ export function LLMForm({ onSubmit, loading }: LLMFormProps) {
       monthly_budget_max_usd: 0,
       output_token_ratio: 0.3,
       top_k: 5,
+      ...initialValues,
     },
   })
 

@@ -360,6 +360,13 @@ def _load_catalog_v2_rows() -> list[CatalogV2Row]:
         else {}
     )
     delta_lookup: dict[tuple[str, str, str, str], dict[str, Any]] = {}
+    matched_rows = int(deltas_payload.get("matched_rows", 0) or 0)
+    changed_rows = int(deltas_payload.get("changed_rows", 0) or 0)
+    if matched_rows < 0 or changed_rows < 0 or changed_rows > matched_rows:
+        raise ValueError(
+            f"{CATALOG_V2_DELTAS_FILE}: invalid counts "
+            f"(matched_rows={matched_rows}, changed_rows={changed_rows})"
+        )
     raw_changes = deltas_payload.get("changes", [])
     if isinstance(raw_changes, list):
         for change in raw_changes:
@@ -373,7 +380,30 @@ def _load_catalog_v2_rows() -> list[CatalogV2Row]:
             )
             if not all(key):
                 continue
+            try:
+                previous_price = change.get("previous_unit_price_usd")
+                current_price = change.get("unit_price_usd")
+                if previous_price not in (None, "", "null"):
+                    float(previous_price)
+                if current_price not in (None, "", "null"):
+                    float(current_price)
+                abs_change = change.get("price_change_abs_usd")
+                if abs_change not in (None, "", "null"):
+                    float(abs_change)
+                pct_change = change.get("price_change_pct")
+                if pct_change not in (None, "", "null"):
+                    float(pct_change)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"{CATALOG_V2_DELTAS_FILE}: invalid numeric value for key={key}: {exc}"
+                ) from exc
             delta_lookup[key] = change
+
+    if raw_changes and matched_rows > 0 and len(delta_lookup) != len(raw_changes):
+        raise ValueError(
+            f"{CATALOG_V2_DELTAS_FILE}: duplicate or invalid delta keys "
+            f"(raw_changes={len(raw_changes)}, unique_keys={len(delta_lookup)})"
+        )
 
     parsed: list[CatalogV2Row] = []
     for idx, row in enumerate(rows, start=1):
@@ -443,6 +473,19 @@ def _load_catalog_v2_rows() -> list[CatalogV2Row]:
             )
         except (KeyError, TypeError, ValueError) as exc:
             raise ValueError(f"{CATALOG_V2_FILE}: invalid row at index {idx}: {exc}") from exc
+
+    if delta_lookup:
+        catalog_keys = {
+            (row.provider, row.sku_key, row.unit_name, row.region)
+            for row in parsed
+        }
+        unknown_delta_keys = sorted(set(delta_lookup) - catalog_keys)
+        if unknown_delta_keys:
+            sample = unknown_delta_keys[0]
+            raise ValueError(
+                f"{CATALOG_V2_DELTAS_FILE}: contains delta keys not present in catalog rows "
+                f"(example={sample})"
+            )
 
     _catalog_v2_rows_cache = parsed
     _catalog_v2_meta_cache = {

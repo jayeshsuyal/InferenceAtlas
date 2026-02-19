@@ -1,8 +1,10 @@
 import { useState } from 'react'
-import { ArrowLeft, X } from 'lucide-react'
+import { ArrowLeft, Sparkles, SlidersHorizontal, X } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { WorkloadSelector } from '@/components/WorkloadSelector'
 import { LLMForm } from '@/components/optimize/LLMForm'
 import { NonLLMForm } from '@/components/optimize/NonLLMForm'
+import { CopilotPanel } from '@/components/optimize/CopilotPanel'
 import { ResultsTable } from '@/components/optimize/ResultsTable'
 import { SkeletonCard } from '@/components/ui/skeleton'
 import { planLLMWorkload, rankCatalogOffers } from '@/services/api'
@@ -10,35 +12,46 @@ import type { LLMFormValues, NonLLMFormValues } from '@/schemas/forms'
 import type {
   LLMPlanningResponse,
   CatalogRankingResponse,
+  CopilotApplyPayload,
 } from '@/services/types'
 import type { WorkloadTypeId } from '@/lib/constants'
+import { WORKLOAD_TYPES } from '@/lib/constants'
 
-type Step = 'select' | 'configure' | 'results'
+type Step = 'select' | 'configure'
+type ConfigMode = 'copilot' | 'guided'
 
 export function OptimizePage() {
   const [step, setStep] = useState<Step>('select')
+  const [mode, setMode] = useState<ConfigMode>('copilot')
   const [workload, setWorkload] = useState<WorkloadTypeId | null>(null)
+  const [initialValues, setInitialValues] = useState<CopilotApplyPayload | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-
-  // Results
   const [llmResult, setLlmResult] = useState<LLMPlanningResponse | null>(null)
   const [catalogResult, setCatalogResult] = useState<CatalogRankingResponse | null>(null)
 
   function handleWorkloadSelect(id: WorkloadTypeId) {
     setWorkload(id)
+    setMode('copilot')
     setStep('configure')
+    setInitialValues(null)
+    setLlmResult(null)
+    setCatalogResult(null)
+    setError(null)
+  }
+
+  function handleApply(payload: CopilotApplyPayload) {
+    setInitialValues(payload)
+    setMode('guided')
+    setError(null)
   }
 
   function handleBack() {
-    if (step === 'results') {
-      setStep('configure')
-    } else {
-      setStep('select')
-      setWorkload(null)
-      setLlmResult(null)
-      setCatalogResult(null)
-    }
+    setStep('select')
+    setWorkload(null)
+    setInitialValues(null)
+    setLlmResult(null)
+    setCatalogResult(null)
     setError(null)
   }
 
@@ -60,7 +73,6 @@ export function OptimizePage() {
         top_k: values.top_k,
       })
       setLlmResult(res)
-      setStep('results')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Planning failed')
     } finally {
@@ -87,7 +99,6 @@ export function OptimizePage() {
         strict_capacity_check: values.strict_capacity_check,
       })
       setCatalogResult(res)
-      setStep('results')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Ranking failed')
     } finally {
@@ -96,60 +107,63 @@ export function OptimizePage() {
   }
 
   const isLLM = workload === 'llm'
+  const hasResults = isLLM ? llmResult !== null : catalogResult !== null
+  const workloadMeta = WORKLOAD_TYPES.find((w) => w.id === workload)
 
   return (
     <div className="max-w-3xl mx-auto px-4 py-6 sm:px-6">
-      {/* Breadcrumb / back */}
+      {/* Back */}
       {step !== 'select' && (
         <button
           onClick={handleBack}
           className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-300 mb-5 transition-colors"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
-          {step === 'configure' ? 'Change workload' : 'Back to form'}
+          Change workload
         </button>
       )}
 
       {/* Step indicator */}
       <div className="flex items-center gap-2 mb-6">
-        {(['select', 'configure', 'results'] as Step[]).map((s, i) => (
+        {(['select', 'configure'] as Step[]).map((s, i) => (
           <div key={s} className="flex items-center gap-2">
             <div
-              className={
+              className={cn(
+                'w-5 h-5 rounded-full text-[10px] flex items-center justify-center font-bold',
                 step === s
-                  ? 'w-5 h-5 rounded-full bg-indigo-600 text-white text-[10px] flex items-center justify-center font-bold'
-                  : step === 'results' && s !== 'results'
-                  ? 'w-5 h-5 rounded-full bg-indigo-950 border border-indigo-700 text-[10px] flex items-center justify-center text-indigo-400'
-                  : 'w-5 h-5 rounded-full bg-zinc-800 text-[10px] flex items-center justify-center text-zinc-500'
-              }
+                  ? 'bg-indigo-600 text-white'
+                  : step === 'configure' && s === 'select'
+                  ? 'bg-indigo-950 border border-indigo-700 text-indigo-400'
+                  : 'bg-zinc-800 text-zinc-500'
+              )}
             >
               {i + 1}
             </div>
             <span
-              className={
-                step === s
-                  ? 'text-xs font-medium text-zinc-200'
-                  : 'text-xs text-zinc-600'
-              }
+              className={cn(
+                'text-xs',
+                step === s ? 'font-medium text-zinc-200' : 'text-zinc-600'
+              )}
             >
-              {s === 'select' ? 'Category' : s === 'configure' ? 'Configure' : 'Results'}
+              {s === 'select' ? 'Category' : 'Configure'}
             </span>
-            {i < 2 && <div className="w-6 h-px bg-zinc-800" />}
+            {i < 1 && <div className="w-6 h-px bg-zinc-800" />}
           </div>
         ))}
       </div>
 
-      {/* Step: Select */}
+      {/* ── Step: Select ── */}
       {step === 'select' && (
         <WorkloadSelector selected={workload} onSelect={handleWorkloadSelect} />
       )}
 
-      {/* Step: Configure */}
+      {/* ── Step: Configure ── */}
       {step === 'configure' && workload && (
         <div className="space-y-5">
+          {/* Workload header */}
           <div>
-            <h2 className="text-base font-semibold text-zinc-100 capitalize">
-              {workload === 'llm' ? 'LLM Inference' : workload.replace(/_/g, ' ')} optimization
+            <h2 className="text-base font-semibold text-zinc-100">
+              {workloadMeta?.label ?? workload.replace(/_/g, ' ')} optimization
             </h2>
             <p className="text-xs text-zinc-500 mt-0.5">
               {isLLM
@@ -158,62 +172,119 @@ export function OptimizePage() {
             </p>
           </div>
 
-          {error && (
-            <div className="rounded-md border border-red-800 bg-red-950/30 px-3 py-2.5 text-xs text-red-300 flex items-start justify-between gap-2">
-              <span>{error}</span>
-              <button
-                onClick={() => setError(null)}
-                className="flex-shrink-0 text-red-400 hover:text-red-200 transition-colors mt-0.5"
-                aria-label="Dismiss error"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
+          {/* Mode tabs */}
+          <div className="flex border-b border-zinc-800 -mb-px">
+            <button
+              type="button"
+              onClick={() => setMode('copilot')}
+              className={cn(
+                'flex items-center gap-1.5 px-4 py-2.5 text-xs font-medium border-b-2 transition-colors',
+                mode === 'copilot'
+                  ? 'border-indigo-500 text-indigo-300'
+                  : 'border-transparent text-zinc-500 hover:text-zinc-300'
+              )}
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              Ask IA AI
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('guided')}
+              className={cn(
+                'flex items-center gap-1.5 px-4 py-2.5 text-xs font-medium border-b-2 transition-colors',
+                mode === 'guided'
+                  ? 'border-indigo-500 text-indigo-300'
+                  : 'border-transparent text-zinc-500 hover:text-zinc-300'
+              )}
+            >
+              <SlidersHorizontal className="h-3.5 w-3.5" />
+              Guided Config
+            </button>
+          </div>
+
+          {/* ── Copilot mode ── */}
+          {mode === 'copilot' && (
+            <CopilotPanel
+              workloadType={workload}
+              isLLM={isLLM}
+              onApply={handleApply}
+            />
+          )}
+
+          {/* ── Guided mode ── */}
+          {mode === 'guided' && (
+            <>
+              {error && (
+                <div className="rounded-md border border-red-800 bg-red-950/30 px-3 py-2.5 text-xs text-red-300 flex items-start justify-between gap-2">
+                  <span>{error}</span>
+                  <button
+                    onClick={() => setError(null)}
+                    className="flex-shrink-0 text-red-400 hover:text-red-200 transition-colors mt-0.5"
+                    aria-label="Dismiss error"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              )}
+
+              {isLLM ? (
+                <LLMForm
+                  key={`llm-${JSON.stringify(initialValues)}`}
+                  onSubmit={handleLLMSubmit}
+                  loading={loading}
+                  initialValues={initialValues as Partial<LLMFormValues> | undefined}
+                />
+              ) : (
+                <NonLLMForm
+                  key={`non-llm-${JSON.stringify(initialValues)}`}
+                  workloadType={workload}
+                  onSubmit={handleNonLLMSubmit}
+                  loading={loading}
+                  initialValues={initialValues as Partial<NonLLMFormValues> | undefined}
+                />
+              )}
+            </>
+          )}
+
+          {/* Loading skeleton */}
+          {loading && (
+            <div className="space-y-3 pt-2">
+              <SkeletonCard />
+              <SkeletonCard />
+              <SkeletonCard />
             </div>
           )}
 
-          {isLLM ? (
-            <LLMForm onSubmit={handleLLMSubmit} loading={loading} />
-          ) : (
-            <NonLLMForm workloadType={workload} onSubmit={handleNonLLMSubmit} loading={loading} />
-          )}
-        </div>
-      )}
+          {/* ── Shared results panel ── */}
+          {hasResults && !loading && (
+            <div className="space-y-4 pt-4 border-t border-zinc-800">
+              <div>
+                <h2 className="text-base font-semibold text-zinc-100">Ranked results</h2>
+                <p className="text-xs text-zinc-500 mt-0.5">
+                  {isLLM
+                    ? 'Capacity-optimized plans sorted by total cost score'
+                    : 'Sorted by normalized unit price'}
+                </p>
+              </div>
 
-      {/* Step: Loading skeleton */}
-      {loading && step !== 'results' && (
-        <div className="mt-6 space-y-3">
-          <SkeletonCard />
-          <SkeletonCard />
-          <SkeletonCard />
-        </div>
-      )}
-
-      {/* Step: Results */}
-      {step === 'results' && !loading && (
-        <div className="space-y-4">
-          <div>
-            <h2 className="text-base font-semibold text-zinc-100">Ranked results</h2>
-            <p className="text-xs text-zinc-500 mt-0.5">
-              {isLLM ? 'Capacity-optimized plans sorted by total cost score' : 'Sorted by normalized price'}
-            </p>
-          </div>
-
-          {isLLM ? (
-            <ResultsTable
-              mode="llm"
-              plans={llmResult?.plans ?? []}
-              diagnostics={llmResult?.provider_diagnostics ?? []}
-              warnings={llmResult?.warnings ?? []}
-              excludedCount={llmResult?.excluded_count ?? 0}
-            />
-          ) : (
-            <ResultsTable
-              mode="non-llm"
-              offers={catalogResult?.offers ?? []}
-              diagnostics={catalogResult?.provider_diagnostics ?? []}
-              warnings={catalogResult?.warnings ?? []}
-              excludedCount={catalogResult?.excluded_count ?? 0}
-            />
+              {isLLM ? (
+                <ResultsTable
+                  mode="llm"
+                  plans={llmResult?.plans ?? []}
+                  diagnostics={llmResult?.provider_diagnostics ?? []}
+                  warnings={llmResult?.warnings ?? []}
+                  excludedCount={llmResult?.excluded_count ?? 0}
+                />
+              ) : (
+                <ResultsTable
+                  mode="non-llm"
+                  offers={catalogResult?.offers ?? []}
+                  diagnostics={catalogResult?.provider_diagnostics ?? []}
+                  warnings={catalogResult?.warnings ?? []}
+                  excludedCount={catalogResult?.excluded_count ?? 0}
+                />
+              )}
+            </div>
           )}
         </div>
       )}

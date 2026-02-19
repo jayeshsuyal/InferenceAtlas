@@ -12,6 +12,9 @@ import type {
   InvoiceAnalysisResponse,
   AIAssistRequest,
   AIAssistResponse,
+  CopilotTurnRequest,
+  CopilotTurnResponse,
+  CopilotApplyPayload,
 } from './types'
 
 import {
@@ -470,6 +473,127 @@ export async function analyzeInvoice(file: File): Promise<InvoiceAnalysisRespons
 }
 
 // ─── AI Assistant ─────────────────────────────────────────────────────────────
+
+// ─── AI Copilot (guided config) ───────────────────────────────────────────────
+
+export async function nextCopilotTurn(req: CopilotTurnRequest): Promise<CopilotTurnResponse> {
+  if (USE_MOCK) {
+    await delay(700)
+    const assistantTurns = req.history.filter((m) => m.role === 'assistant').length
+    const msg = req.message.toLowerCase()
+    const workload = canonicalWorkload(req.workload_type)
+    const isLLM = workload === 'llm'
+
+    // Turn 0 ─ greet + ask core question
+    if (assistantTurns === 0) {
+      return isLLM
+        ? {
+            reply:
+              "Got it — LLM Inference optimization. A couple of quick questions to narrow the plan:\n- What's your approximate daily token volume?\n- Do you prefer a smaller model for speed/cost, or a larger one for quality?",
+            extracted_spec: { workload_type: req.workload_type },
+            missing_fields: ['daily token volume', 'model size', 'traffic pattern'],
+            follow_up_questions: [
+              '~5M tokens/day (small team)',
+              '~50M tokens/day (production)',
+              '~500M tokens/day (high volume)',
+            ],
+            apply_payload: null,
+            is_ready: false,
+          }
+        : {
+            reply: `Got it — ${workload.replace(/_/g, ' ')} pricing. Two quick questions:\n- What's your monthly usage volume?\n- Do you have a monthly budget cap?`,
+            extracted_spec: { workload_type: req.workload_type },
+            missing_fields: ['monthly usage volume', 'budget cap'],
+            follow_up_questions: [
+              'Low volume (~1K units/month)',
+              'Medium volume (~10K units/month)',
+              'No budget limit',
+            ],
+            apply_payload: null,
+            is_ready: false,
+          }
+    }
+
+    // Turn 1 ─ partial extraction + one more question
+    if (assistantTurns === 1) {
+      const big = msg.includes('500m') || msg.includes('high volume')
+      if (isLLM) {
+        const tokens_per_day = big ? 500_000_000 : msg.includes('50m') || msg.includes('production') ? 50_000_000 : 5_000_000
+        const model_bucket = msg.includes('small') || msg.includes('speed') || msg.includes('7b') ? '7b' : '70b'
+        return {
+          reply:
+            'Almost there! Which providers should I include — cheap open-weight inference, proprietary APIs, or cloud/enterprise?',
+          extracted_spec: { workload_type: req.workload_type, tokens_per_day, model_bucket, traffic_pattern: 'business_hours' },
+          missing_fields: ['provider preferences'],
+          follow_up_questions: [
+            'Open-weight (Fireworks, Together, Groq)',
+            'Mix of open + proprietary',
+            'Cloud / enterprise (AWS, Azure)',
+          ],
+          apply_payload: null,
+          is_ready: false,
+        }
+      } else {
+        const monthly_usage = msg.includes('10k') || msg.includes('medium') ? 10_000 : 1_000
+        const monthly_budget_max_usd = msg.includes('no budget') || msg.includes('no limit') ? 0 : 0
+        return {
+          reply: 'Good. Should I factor in throughput capacity when ranking, or optimize purely by unit price?',
+          extracted_spec: { workload_type: req.workload_type, monthly_usage, monthly_budget_max_usd },
+          missing_fields: ['throughput requirements'],
+          follow_up_questions: [
+            'Rank by price only',
+            'Factor in throughput capacity',
+            'Strict capacity check',
+          ],
+          apply_payload: null,
+          is_ready: false,
+        }
+      }
+    }
+
+    // Turn 2+ ─ ready with full apply_payload
+    const cheap = msg.includes('cheap') || msg.includes('open-weight') || msg.includes('price only') || msg.includes('fireworks')
+    const reliable = msg.includes('cloud') || msg.includes('enterprise') || msg.includes('strict') || msg.includes('aws')
+    const throughput = msg.includes('throughput') || msg.includes('capacity') || msg.includes('strict')
+
+    const preset: 'cheap' | 'balanced' | 'reliable' = cheap ? 'cheap' : reliable ? 'reliable' : 'balanced'
+    const presetLabel = { cheap: 'Cost-optimized', balanced: 'Balanced', reliable: 'Reliability-focused' }[preset]
+
+    const payload: CopilotApplyPayload = isLLM
+      ? {
+          tokens_per_day: 5_000_000,
+          model_bucket: cheap ? '7b' : '70b',
+          provider_ids: cheap
+            ? ['fireworks', 'together_ai', 'groq']
+            : reliable
+            ? ['openai', 'anthropic', 'aws']
+            : ['fireworks', 'together_ai', 'openai', 'anthropic'],
+          traffic_pattern: 'business_hours',
+          util_target: reliable ? 0.7 : 0.75,
+          top_k: reliable ? 3 : 5,
+          monthly_budget_max_usd: 0,
+        }
+      : {
+          monthly_usage: 5_000,
+          monthly_budget_max_usd: 0,
+          confidence_weighted: true,
+          comparator_mode: 'normalized',
+          throughput_aware: throughput,
+          strict_capacity_check: reliable,
+          top_k: 5,
+        }
+
+    return {
+      reply: `**${presetLabel}** configuration ready. Click **Apply to Config** to prefill the form, then review and submit.`,
+      extracted_spec: { workload_type: req.workload_type, ...payload },
+      missing_fields: [],
+      follow_up_questions: [],
+      apply_payload: payload,
+      is_ready: true,
+    }
+  }
+  return post<CopilotTurnResponse>('/api/v1/ai/copilot', req)
+}
 
 export async function askAI(req: AIAssistRequest): Promise<AIAssistResponse> {
   if (USE_MOCK) {
