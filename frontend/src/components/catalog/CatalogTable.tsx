@@ -5,6 +5,7 @@ import { Search, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
 import { cn, formatUSD, confidenceLabel, billingModeLabel, workloadDisplayName } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
+import { ProviderLogo, providerDisplayName } from '@/components/ui/provider-logo'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
@@ -118,7 +119,12 @@ export function CatalogTable({ rows, loading }: CatalogTableProps) {
             <SelectContent>
               <SelectItem value="__all__">All providers</SelectItem>
               {uniqueProviders.map((p) => (
-                <SelectItem key={p} value={p}>{p}</SelectItem>
+                <SelectItem key={p} value={p}>
+                  <div className="flex items-center gap-2">
+                    <ProviderLogo provider={p} size="sm" />
+                    <span>{providerDisplayName(p)}</span>
+                  </div>
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -208,7 +214,12 @@ export function CatalogTable({ rows, loading }: CatalogTableProps) {
               ) : (
                 filtered.map((row, i) => (
                   <tr key={i} className="hover:bg-zinc-900/50 transition-colors">
-                    <td className="px-4 py-3 text-xs font-medium text-zinc-200">{row.provider}</td>
+                    <td className="px-4 py-3 text-xs font-medium text-zinc-200">
+                      <div className="flex items-center gap-2">
+                        <ProviderLogo provider={row.provider} size="sm" />
+                        <span>{providerDisplayName(row.provider)}</span>
+                      </div>
+                    </td>
                     <td className="px-4 py-3">
                       <Badge variant="default" className="text-[10px]">
                         {workloadDisplayName(row.workload_type)}

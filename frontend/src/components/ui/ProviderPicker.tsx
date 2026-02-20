@@ -4,6 +4,7 @@
  */
 import { cn } from '@/lib/utils'
 import { PROVIDERS } from '@/lib/constants'
+import { ProviderLogo, providerDisplayName } from '@/components/ui/provider-logo'
 
 interface ProviderPickerProps {
   value: string[]
@@ -40,13 +41,14 @@ export function ProviderPicker({
               aria-pressed={isSelected}
               onClick={() => toggle(p)}
               className={cn(
-                'rounded-full px-2.5 py-1 text-[11px] font-medium border transition-colors',
+                'rounded-full px-2 py-1 text-[11px] font-medium border transition-colors inline-flex items-center gap-1.5',
                 isSelected
                   ? 'border-indigo-600 bg-indigo-950/60 text-indigo-300'
                   : 'border-zinc-700 bg-zinc-900 text-zinc-500 hover:border-zinc-600 hover:text-zinc-400'
               )}
             >
-              {p}
+              <ProviderLogo provider={p} size="sm" />
+              <span>{providerDisplayName(p)}</span>
             </button>
           )
         })}

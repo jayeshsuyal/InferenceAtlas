@@ -2,6 +2,7 @@ import { lazy, Suspense, useState } from 'react'
 import { ChevronDown, ChevronUp, Info, Trophy } from 'lucide-react'
 import { cn, formatUSD, formatPercent, riskLevel, confidenceLabel, billingModeLabel, capacityLabel } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
+import { ProviderLogo, providerDisplayName } from '@/components/ui/provider-logo'
 import type { RankedPlan, RankedCatalogOffer, ProviderDiagnostic } from '@/services/types'
 import { ASSUMPTION_LABELS } from '@/lib/constants'
 const InsightsCharts = lazy(() =>
@@ -60,7 +61,10 @@ function LLMResultCard({ plan, isFirst, index }: { plan: RankedPlan; isFirst: bo
               {isFirst ? <Trophy className="w-3.5 h-3.5" /> : plan.rank}
             </div>
             <div>
-              <div className="text-sm font-semibold text-zinc-100">{plan.provider_name}</div>
+              <div className="text-sm font-semibold text-zinc-100 flex items-center gap-2">
+                <ProviderLogo provider={plan.provider_id} size="sm" />
+                <span>{providerDisplayName(plan.provider_id) || plan.provider_name}</span>
+              </div>
               <div className="text-[11px] text-zinc-500 font-mono mt-0.5">{plan.offering_id}</div>
             </div>
           </div>
@@ -159,7 +163,10 @@ function NonLLMResultRow({ offer, isFirst, index }: { offer: RankedCatalogOffer;
 
       {/* Provider + SKU */}
       <div className="flex-1 min-w-0">
-        <div className="text-sm font-medium text-zinc-100">{offer.provider}</div>
+        <div className="text-sm font-medium text-zinc-100 flex items-center gap-2">
+          <ProviderLogo provider={offer.provider} size="sm" />
+          <span>{providerDisplayName(offer.provider)}</span>
+        </div>
         <div className="text-[11px] text-zinc-500 font-mono truncate">{offer.sku_name}</div>
       </div>
 
@@ -227,7 +234,12 @@ function DiagnosticsPanel({ diagnostics }: { diagnostics: ProviderDiagnostic[] }
               >
                 {d.status}
               </Badge>
-              <span className="text-xs font-medium text-zinc-300 w-24">{d.provider}</span>
+              <div className="w-36 flex items-center gap-2">
+                <ProviderLogo provider={d.provider} size="sm" />
+                <span className="text-xs font-medium text-zinc-300 truncate">
+                  {providerDisplayName(d.provider)}
+                </span>
+              </div>
               <span className="text-[11px] text-zinc-500 flex-1">{d.reason}</span>
             </div>
           ))}
