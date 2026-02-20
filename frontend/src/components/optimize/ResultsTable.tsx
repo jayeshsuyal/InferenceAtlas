@@ -31,14 +31,18 @@ function CapacityBadge({ check }: { check: string }) {
 
 // ─── LLM result card ──────────────────────────────────────────────────────────
 
-function LLMResultCard({ plan, isFirst }: { plan: RankedPlan; isFirst: boolean }) {
+function LLMResultCard({ plan, isFirst, index }: { plan: RankedPlan; isFirst: boolean; index: number }) {
   const [expanded, setExpanded] = useState(false)
 
   return (
     <div
+      style={{ animationDelay: `${index * 50}ms` }}
       className={cn(
-        'rounded-lg border bg-zinc-900 transition-all',
-        isFirst ? 'border-indigo-700/60 ring-1 ring-indigo-700/30' : 'border-zinc-800'
+        'rounded-lg border transition-all duration-200 animate-enter',
+        'hover:-translate-y-px hover:shadow-md',
+        isFirst
+          ? 'border-indigo-500/30 bg-indigo-950/20 shadow-[0_0_18px_rgba(99,102,241,0.12)] ring-1 ring-indigo-500/20'
+          : 'border-white/[0.07] bg-zinc-900/60 hover:border-white/[0.11]'
       )}
     >
       <div className="p-4">
@@ -48,7 +52,9 @@ function LLMResultCard({ plan, isFirst }: { plan: RankedPlan; isFirst: boolean }
             <div
               className={cn(
                 'flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold',
-                isFirst ? 'bg-indigo-600 text-white' : 'bg-zinc-800 text-zinc-400'
+                isFirst
+                  ? 'bg-indigo-600 text-white shadow-glow-sm'
+                  : 'bg-zinc-800/80 text-zinc-400 border border-white/[0.06]'
               )}
             >
               {isFirst ? <Trophy className="w-3.5 h-3.5" /> : plan.rank}
@@ -59,7 +65,10 @@ function LLMResultCard({ plan, isFirst }: { plan: RankedPlan; isFirst: boolean }
             </div>
           </div>
           <div className="text-right flex-shrink-0">
-            <div className="text-lg font-bold text-zinc-100 font-numeric">
+            <div className={cn(
+              'text-lg font-bold font-numeric',
+              isFirst ? 'text-indigo-200' : 'text-zinc-100'
+            )}>
               {formatUSD(plan.monthly_cost_usd, 0)}
             </div>
             <div className="text-[10px] text-zinc-500">/ month</div>
@@ -93,7 +102,7 @@ function LLMResultCard({ plan, isFirst }: { plan: RankedPlan; isFirst: boolean }
       </div>
 
       {expanded && (
-        <div className="px-4 pb-3 border-t border-zinc-800 pt-3">
+        <div className="px-4 pb-3 border-t border-white/[0.05] pt-3 animate-enter-fast">
           <div className="grid grid-cols-3 gap-x-4 gap-y-1.5">
             {Object.entries(plan.assumptions).map(([key, val]) => (
               <div key={key}>
@@ -102,7 +111,7 @@ function LLMResultCard({ plan, isFirst }: { plan: RankedPlan; isFirst: boolean }
               </div>
             ))}
           </div>
-          <div className="mt-2 pt-2 border-t border-zinc-800 grid grid-cols-2 gap-x-4">
+          <div className="mt-2 pt-2 border-t border-white/[0.05] grid grid-cols-2 gap-x-4">
             <div>
               <div className="text-[10px] text-zinc-500">Overload risk</div>
               <div className="text-xs font-mono text-zinc-300">
@@ -124,19 +133,25 @@ function LLMResultCard({ plan, isFirst }: { plan: RankedPlan; isFirst: boolean }
 
 // ─── Non-LLM result row ───────────────────────────────────────────────────────
 
-function NonLLMResultRow({ offer, isFirst }: { offer: RankedCatalogOffer; isFirst: boolean }) {
+function NonLLMResultRow({ offer, isFirst, index }: { offer: RankedCatalogOffer; isFirst: boolean; index: number }) {
   return (
     <div
+      style={{ animationDelay: `${index * 40}ms` }}
       className={cn(
-        'flex items-center gap-4 px-4 py-3 rounded-lg border bg-zinc-900',
-        isFirst ? 'border-indigo-700/60 ring-1 ring-indigo-700/30' : 'border-zinc-800'
+        'flex items-center gap-4 px-4 py-3 rounded-lg border transition-all duration-200 animate-enter',
+        'hover:-translate-y-px hover:shadow-md',
+        isFirst
+          ? 'border-indigo-500/30 bg-indigo-950/20 shadow-[0_0_14px_rgba(99,102,241,0.10)] ring-1 ring-indigo-500/20'
+          : 'border-white/[0.07] bg-zinc-900/60 hover:border-white/[0.11]'
       )}
     >
       {/* Rank */}
       <div
         className={cn(
           'flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold',
-          isFirst ? 'bg-indigo-600 text-white' : 'bg-zinc-800 text-zinc-400'
+          isFirst
+            ? 'bg-indigo-600 text-white shadow-glow-sm'
+            : 'bg-zinc-800/80 text-zinc-400 border border-white/[0.06]'
         )}
       >
         {isFirst ? <Trophy className="w-3.5 h-3.5" /> : offer.rank}
@@ -156,7 +171,10 @@ function NonLLMResultRow({ offer, isFirst }: { offer: RankedCatalogOffer; isFirs
 
       {/* Monthly estimate */}
       <div className="text-right">
-        <div className="text-sm font-bold text-zinc-100 font-numeric">
+        <div className={cn(
+          'text-sm font-bold font-numeric',
+          isFirst ? 'text-indigo-200' : 'text-zinc-100'
+        )}>
           {offer.monthly_estimate_usd !== null ? formatUSD(offer.monthly_estimate_usd) : '—'}
         </div>
         <div className="text-[10px] text-zinc-500">/ month</div>
@@ -187,10 +205,10 @@ function DiagnosticsPanel({ diagnostics }: { diagnostics: ProviderDiagnostic[] }
   if (excluded.length === 0) return null
 
   return (
-    <div className="border border-zinc-800 rounded-lg overflow-hidden">
+    <div className="border border-white/[0.06] rounded-lg overflow-hidden">
       <button
         onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between px-4 py-2.5 text-xs text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900 transition-colors"
+        className="w-full flex items-center justify-between px-4 py-2.5 text-xs text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.03] transition-colors"
       >
         <span>
           {excluded.length} provider{excluded.length !== 1 ? 's' : ''} excluded or not selected
@@ -198,7 +216,7 @@ function DiagnosticsPanel({ diagnostics }: { diagnostics: ProviderDiagnostic[] }
         {open ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
       </button>
       {open && (
-        <div className="border-t border-zinc-800 divide-y divide-zinc-800">
+        <div className="border-t border-white/[0.05] divide-y divide-white/[0.04] animate-enter-fast">
           {diagnostics.map((d) => (
             <div key={d.provider} className="flex items-center gap-3 px-4 py-2">
               <Badge
@@ -261,10 +279,10 @@ export function ResultsTable({
   }
 
   return (
-    <div className="space-y-3 animate-fade-in">
+    <div className="space-y-3">
       {/* Warnings */}
       {warnings.map((w, i) => (
-        <div key={i} className="flex gap-2 items-start rounded-md border border-amber-800 bg-amber-950/30 px-3 py-2">
+        <div key={i} className="flex gap-2 items-start rounded-lg border border-amber-800/40 bg-amber-950/20 px-3 py-2">
           <span className="text-amber-400 text-xs">⚠</span>
           <span className="text-xs text-amber-300">{w}</span>
         </div>
@@ -283,7 +301,7 @@ export function ResultsTable({
       {/* Insights */}
       <Suspense
         fallback={
-          <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4 text-xs text-zinc-500">
+          <div className="rounded-lg border border-white/[0.06] bg-zinc-900/50 p-4 text-xs text-zinc-500">
             Loading insights…
           </div>
         }
@@ -294,10 +312,10 @@ export function ResultsTable({
       {/* Results */}
       {mode === 'llm'
         ? plans.map((plan, i) => (
-            <LLMResultCard key={plan.offering_id} plan={plan} isFirst={i === 0} />
+            <LLMResultCard key={plan.offering_id} plan={plan} isFirst={i === 0} index={i} />
           ))
         : offers.map((offer, i) => (
-            <NonLLMResultRow key={offer.sku_name} offer={offer} isFirst={i === 0} />
+            <NonLLMResultRow key={offer.sku_name} offer={offer} isFirst={i === 0} index={i} />
           ))}
 
       {/* Provider diagnostics */}

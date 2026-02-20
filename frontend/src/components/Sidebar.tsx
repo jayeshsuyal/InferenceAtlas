@@ -18,19 +18,25 @@ export function Sidebar({ className }: SidebarProps) {
   return (
     <aside
       className={cn(
-        'flex flex-col h-full bg-zinc-950 border-r border-zinc-800',
+        'flex flex-col h-full border-r',
+        'bg-zinc-950/90 border-white/[0.06]',
         className
       )}
     >
       {/* Logo */}
-      <div className="px-4 py-4 border-b border-zinc-800">
-        <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-md bg-indigo-600 flex items-center justify-center flex-shrink-0">
-            <span className="text-white text-xs font-bold">IA</span>
+      <div className="px-4 py-4 border-b border-white/[0.05]">
+        <div className="flex items-center gap-2.5">
+          <div className="relative w-7 h-7 flex-shrink-0">
+            <div className="absolute inset-0 rounded-lg bg-indigo-600 shadow-glow-sm" />
+            <div className="absolute inset-0 rounded-lg flex items-center justify-center">
+              <span className="text-white text-[10px] font-bold tracking-tight">IA</span>
+            </div>
           </div>
           <div>
-            <div className="text-sm font-bold text-zinc-100 leading-none">InferenceAtlas</div>
-            <div className="text-[10px] text-zinc-500 mt-0.5">v0.1 · pre-release</div>
+            <div className="text-sm font-bold text-zinc-100 leading-none tracking-tight">
+              InferenceAtlas
+            </div>
+            <div className="text-[10px] text-zinc-500 mt-0.5 font-mono">v0.1 · pre-release</div>
           </div>
         </div>
       </div>
@@ -44,20 +50,32 @@ export function Sidebar({ className }: SidebarProps) {
             end={end}
             className={({ isActive }) =>
               cn(
-                'flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium transition-colors',
+                'group flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 border',
                 isActive
-                  ? 'bg-zinc-800 text-zinc-100'
-                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900'
+                  ? 'bg-indigo-600/12 text-indigo-300 border-indigo-500/25 shadow-glow-sm'
+                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.04] border-transparent'
               )
             }
           >
-            <Icon className="h-4 w-4 flex-shrink-0" />
-            <span>{label}</span>
+            {({ isActive }) => (
+              <>
+                <Icon
+                  className={cn(
+                    'h-4 w-4 flex-shrink-0 transition-colors',
+                    isActive ? 'text-indigo-400' : 'text-zinc-500 group-hover:text-zinc-300'
+                  )}
+                />
+                <span>{label}</span>
+                {isActive && (
+                  <span className="ml-auto w-1.5 h-1.5 rounded-full bg-indigo-400 shadow-[0_0_6px_rgba(129,140,248,0.8)]" />
+                )}
+              </>
+            )}
           </NavLink>
         ))}
       </nav>
 
-      <Separator />
+      <Separator className="bg-white/[0.05] h-px" />
 
       {/* AI Panel — takes remaining space */}
       <div className="flex-1 min-h-0 flex flex-col">
@@ -65,23 +83,23 @@ export function Sidebar({ className }: SidebarProps) {
       </div>
 
       {/* Footer */}
-      <div className="px-4 py-3 border-t border-zinc-800 space-y-2">
+      <div className="px-4 py-3 border-t border-white/[0.05] space-y-2">
         <a
           href="https://github.com/jayeshsuyal/inference-atlas"
           target="_blank"
           rel="noopener noreferrer"
-          className="flex items-center gap-2 text-[11px] text-zinc-400 hover:text-zinc-200 transition-colors"
+          className="flex items-center gap-2 text-[11px] text-zinc-400 hover:text-zinc-200 transition-colors group"
         >
-          <Github className="h-3.5 w-3.5" />
+          <Github className="h-3.5 w-3.5 flex-shrink-0" />
           <span>Star on GitHub</span>
-          <ChevronRight className="h-3 w-3 ml-auto opacity-50" />
+          <ChevronRight className="h-3 w-3 ml-auto opacity-40 group-hover:opacity-70 transition-opacity" />
         </a>
-        <details className="group">
+        <details className="group/details">
           <summary className="flex items-center gap-2 text-[11px] text-zinc-500 hover:text-zinc-300 cursor-pointer list-none transition-colors select-none">
             <span>ℹ︎ About & Roadmap</span>
-            <ChevronRight className="h-3 w-3 ml-auto group-open:rotate-90 transition-transform" />
+            <ChevronRight className="h-3 w-3 ml-auto group-open/details:rotate-90 transition-transform duration-200" />
           </summary>
-          <div className="mt-2 space-y-2 pl-1">
+          <div className="mt-2 space-y-2 pl-1 animate-enter-fast">
             <p className="text-[10px] text-zinc-500 leading-relaxed">
               Early build — expect rough edges and breaking changes before v1.
             </p>

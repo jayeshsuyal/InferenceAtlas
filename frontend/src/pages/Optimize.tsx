@@ -147,7 +147,7 @@ export function OptimizePage() {
             >
               {s === 'select' ? 'Category' : 'Configure'}
             </span>
-            {i < 1 && <div className="w-6 h-px bg-zinc-800" />}
+            {i < 1 && <div className="w-6 subtle-divider" />}
           </div>
         ))}
       </div>
@@ -173,15 +173,15 @@ export function OptimizePage() {
           </div>
 
           {/* Mode tabs */}
-          <div className="flex border-b border-zinc-800 -mb-px">
+          <div className="flex border-b border-white/[0.06] -mb-px">
             <button
               type="button"
               onClick={() => setMode('copilot')}
               className={cn(
-                'flex items-center gap-1.5 px-4 py-2.5 text-xs font-medium border-b-2 transition-colors',
+                'flex items-center gap-1.5 px-4 py-2.5 text-xs font-medium border-b-2 transition-all duration-200',
                 mode === 'copilot'
                   ? 'border-indigo-500 text-indigo-300'
-                  : 'border-transparent text-zinc-500 hover:text-zinc-300'
+                  : 'border-transparent text-zinc-500 hover:text-zinc-300 hover:border-white/[0.10]'
               )}
             >
               <Sparkles className="h-3.5 w-3.5" />
@@ -191,10 +191,10 @@ export function OptimizePage() {
               type="button"
               onClick={() => setMode('guided')}
               className={cn(
-                'flex items-center gap-1.5 px-4 py-2.5 text-xs font-medium border-b-2 transition-colors',
+                'flex items-center gap-1.5 px-4 py-2.5 text-xs font-medium border-b-2 transition-all duration-200',
                 mode === 'guided'
                   ? 'border-indigo-500 text-indigo-300'
-                  : 'border-transparent text-zinc-500 hover:text-zinc-300'
+                  : 'border-transparent text-zinc-500 hover:text-zinc-300 hover:border-white/[0.10]'
               )}
             >
               <SlidersHorizontal className="h-3.5 w-3.5" />
@@ -257,7 +257,7 @@ export function OptimizePage() {
 
           {/* ── Shared results panel ── */}
           {hasResults && !loading && (
-            <div className="space-y-4 pt-4 border-t border-zinc-800">
+            <div className="space-y-4 pt-4 border-t border-white/[0.06] animate-enter">
               <div>
                 <h2 className="text-base font-semibold text-zinc-100">Ranked results</h2>
                 <p className="text-xs text-zinc-500 mt-0.5">
