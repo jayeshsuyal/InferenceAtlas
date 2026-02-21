@@ -17,10 +17,10 @@ type SortKey = keyof Pick<CatalogRow, 'provider' | 'unit_price_usd' | 'workload_
 type SortDir = 'asc' | 'desc'
 
 function SortIcon({ col, active, dir }: { col: string; active: string; dir: SortDir }) {
-  if (col !== active) return <ArrowUpDown className="h-3 w-3 text-zinc-600" />
+  if (col !== active) return <ArrowUpDown className="h-3 w-3 opacity-30" />
   return dir === 'asc'
-    ? <ArrowUp className="h-3 w-3 text-indigo-400" />
-    : <ArrowDown className="h-3 w-3 text-indigo-400" />
+    ? <ArrowUp className="h-3 w-3" style={{ color: 'var(--brand)' }} />
+    : <ArrowDown className="h-3 w-3" style={{ color: 'var(--brand)' }} />
 }
 
 interface CatalogTableProps {
@@ -31,10 +31,11 @@ interface CatalogTableProps {
 export function CatalogTable({ rows, loading }: CatalogTableProps) {
   const [sortKey, setSortKey] = useState<SortKey>('unit_price_usd')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
+  const [browseMode, setBrowseMode] = useState<'workload_first' | 'provider_first'>('workload_first')
 
   const { register, watch, setValue } = useForm<CatalogFilterValues>({
     resolver: zodResolver(catalogFilterSchema),
-    defaultValues: { workload_type: '', provider: '', unit_name: '', search: '' },
+    defaultValues: { workload_type: '', provider: '', model_name: '', unit_name: '', search: '' },
   })
 
   const filters = watch()
@@ -48,28 +49,34 @@ export function CatalogTable({ rows, loading }: CatalogTableProps) {
     }
   }
 
+  const scopedForProvider = useMemo(() => {
+    if (browseMode === 'workload_first') {
+      return filters.workload_type ? rows.filter((r) => r.workload_type === filters.workload_type) : rows
+    }
+    return filters.provider ? rows.filter((r) => r.provider === filters.provider) : rows
+  }, [rows, filters.workload_type, filters.provider, browseMode])
+
+  const scopedForWorkload = useMemo(() => {
+    if (browseMode === 'provider_first') {
+      return filters.provider ? rows.filter((r) => r.provider === filters.provider) : rows
+    }
+    return filters.workload_type ? rows.filter((r) => r.workload_type === filters.workload_type) : rows
+  }, [rows, filters.workload_type, filters.provider, browseMode])
+
   const filtered = useMemo(() => {
     let out = [...rows]
-
-    if (filters.workload_type) {
-      out = out.filter((r) => r.workload_type === filters.workload_type)
-    }
-    if (filters.provider) {
-      out = out.filter((r) => r.provider.toLowerCase().includes(filters.provider.toLowerCase()))
-    }
-    if (filters.unit_name) {
-      out = out.filter((r) => r.unit_name === filters.unit_name)
-    }
+    if (filters.workload_type) out = out.filter((r) => r.workload_type === filters.workload_type)
+    if (filters.provider) out = out.filter((r) => r.provider === filters.provider)
+    if (filters.model_name) out = out.filter((r) => (r.model_name ?? '') === filters.model_name)
+    if (filters.unit_name) out = out.filter((r) => r.unit_name === filters.unit_name)
     if (filters.search) {
       const q = filters.search.toLowerCase()
-      out = out.filter(
-        (r) =>
-          r.sku_name.toLowerCase().includes(q) ||
-          r.provider.toLowerCase().includes(q) ||
-          (r.model_name ?? '').toLowerCase().includes(q)
+      out = out.filter((r) =>
+        r.sku_name.toLowerCase().includes(q) ||
+        r.provider.toLowerCase().includes(q) ||
+        (r.model_name ?? '').toLowerCase().includes(q)
       )
     }
-
     out.sort((a, b) => {
       const av: string | number | null = a[sortKey] ?? null
       const bv: string | number | null = b[sortKey] ?? null
@@ -80,110 +87,172 @@ export function CatalogTable({ rows, loading }: CatalogTableProps) {
       if (av > bv) return sortDir === 'asc' ? 1 : -1
       return 0
     })
-
     return out
   }, [rows, filters, sortKey, sortDir])
 
-  const uniqueProviders = useMemo(() => [...new Set(rows.map((r) => r.provider))].sort(), [rows])
-  const uniqueUnits = useMemo(() => [...new Set(rows.map((r) => r.unit_name))].sort(), [rows])
+  const uniqueProviders = useMemo(() => [...new Set(scopedForProvider.map((r) => r.provider))].sort(), [scopedForProvider])
+  const uniqueWorkloads = useMemo(() => [...new Set(scopedForWorkload.map((r) => r.workload_type))].sort(), [scopedForWorkload])
+  const uniqueModels = useMemo(() => {
+    let s = rows
+    if (filters.workload_type) s = s.filter((r) => r.workload_type === filters.workload_type)
+    if (filters.provider) s = s.filter((r) => r.provider === filters.provider)
+    return [...new Set(s.map((r) => r.model_name).filter(Boolean) as string[])].sort()
+  }, [rows, filters.workload_type, filters.provider])
+  const uniqueUnits = useMemo(() => {
+    let s = rows
+    if (filters.workload_type) s = s.filter((r) => r.workload_type === filters.workload_type)
+    if (filters.provider) s = s.filter((r) => r.provider === filters.provider)
+    if (filters.model_name) s = s.filter((r) => (r.model_name ?? '') === filters.model_name)
+    return [...new Set(s.map((r) => r.unit_name))].sort()
+  }, [rows, filters.workload_type, filters.provider, filters.model_name])
+
+  const COLS = [
+    { key: 'provider' as SortKey, label: 'Provider' },
+    { key: 'workload_type' as SortKey, label: 'Workload' },
+    { key: null, label: 'SKU / Model' },
+    { key: 'unit_name' as SortKey, label: 'Unit' },
+    { key: 'unit_price_usd' as SortKey, label: 'Price' },
+    { key: null, label: 'Billing' },
+    { key: null, label: 'Confidence' },
+  ]
 
   return (
     <div className="space-y-4">
+      {/* Browse mode toggle */}
+      <div className="flex items-center gap-2">
+        <span className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>Browse mode</span>
+        {[
+          { value: 'workload_first' as const, label: 'Workload → Provider' },
+          { value: 'provider_first' as const, label: 'Provider → Workload' },
+        ].map((opt) => (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => setBrowseMode(opt.value)}
+            className={cn(
+              'rounded-full px-2.5 py-1 text-[11px] border transition-all duration-200',
+              browseMode === opt.value
+                ? 'text-[#c4b5fd]'
+                : 'border-white/[0.07] text-zinc-500 hover:text-zinc-300 hover:border-white/[0.12]'
+            )}
+            style={browseMode === opt.value ? {
+              background: 'rgba(124,92,252,0.10)',
+              borderColor: 'rgba(124,92,252,0.30)',
+            } : {}}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+
       {/* Filters */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <div className="md:col-span-1">
-          <Select
-            value={filters.workload_type || '__all__'}
-            onValueChange={(v) => setValue('workload_type', v === '__all__' ? '' : v)}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="All workloads" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__all__">All workloads</SelectItem>
-              {WORKLOAD_TYPES.map((w) => (
-                <SelectItem key={w.id} value={w.id}>{w.label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-2.5">
+        <Select
+          value={filters.workload_type || '__all__'}
+          onValueChange={(v) => setValue('workload_type', v === '__all__' ? '' : v)}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="All workloads" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__all__">All workloads</SelectItem>
+            {WORKLOAD_TYPES.filter((w) => uniqueWorkloads.includes(w.id)).map((w) => (
+              <SelectItem key={w.id} value={w.id}>{w.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
 
-        <div className="md:col-span-1">
-          <Select
-            value={filters.provider || '__all__'}
-            onValueChange={(v) => setValue('provider', v === '__all__' ? '' : v)}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="All providers" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__all__">All providers</SelectItem>
-              {uniqueProviders.map((p) => (
-                <SelectItem key={p} value={p}>
-                  <div className="flex items-center gap-2">
-                    <ProviderLogo provider={p} size="sm" />
-                    <span>{providerDisplayName(p)}</span>
-                  </div>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        <Select
+          value={filters.provider || '__all__'}
+          onValueChange={(v) => setValue('provider', v === '__all__' ? '' : v)}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="All providers" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__all__">All providers</SelectItem>
+            {uniqueProviders.map((p) => (
+              <SelectItem key={p} value={p}>
+                <div className="flex items-center gap-2">
+                  <ProviderLogo provider={p} size="sm" />
+                  <span>{providerDisplayName(p)}</span>
+                </div>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
 
-        <div className="md:col-span-1">
-          <Select
-            value={filters.unit_name || '__all__'}
-            onValueChange={(v) => setValue('unit_name', v === '__all__' ? '' : v)}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="All units" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__all__">All units</SelectItem>
-              {uniqueUnits.map((u) => (
-                <SelectItem key={u} value={u}>{u}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        <Select
+          value={filters.model_name || '__all__'}
+          onValueChange={(v) => setValue('model_name', v === '__all__' ? '' : v)}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="All models" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__all__">All models</SelectItem>
+            {uniqueModels.map((m) => (
+              <SelectItem key={m} value={m}>{m}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
 
-        <div className="relative md:col-span-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-500" />
-          <Input
-            {...register('search')}
-            className="pl-8"
-            placeholder="Search SKU or model…"
-          />
+        <Select
+          value={filters.unit_name || '__all__'}
+          onValueChange={(v) => setValue('unit_name', v === '__all__' ? '' : v)}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="All units" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__all__">All units</SelectItem>
+            {uniqueUnits.map((u) => (
+              <SelectItem key={u} value={u}>{u}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5" style={{ color: 'var(--text-tertiary)' }} />
+          <Input {...register('search')} className="pl-8" placeholder="Search SKU or model…" />
         </div>
       </div>
 
-      {/* Summary */}
-      <div className="text-[11px] text-zinc-500">
-        {loading ? 'Loading…' : `${filtered.length} of ${rows.length} entries`}
+      {/* Count summary */}
+      <div className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
+        {loading ? (
+          <span className="shimmer inline-block w-24 h-3 rounded" />
+        ) : (
+          <>
+            <span style={{ color: 'var(--text-secondary)' }}>{filtered.length.toLocaleString()}</span>
+            {' '}of {rows.length.toLocaleString()} entries
+          </>
+        )}
       </div>
 
-      {/* Table */}
-      <div className="rounded-lg border border-zinc-800 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-zinc-800 bg-zinc-900/50">
-                {[
-                  { key: 'provider' as SortKey, label: 'Provider' },
-                  { key: 'workload_type' as SortKey, label: 'Workload' },
-                  { key: null, label: 'SKU / Model' },
-                  { key: 'unit_name' as SortKey, label: 'Unit' },
-                  { key: 'unit_price_usd' as SortKey, label: 'Price' },
-                  { key: null, label: 'Billing' },
-                  { key: null, label: 'Confidence' },
-                ].map(({ key, label }, i) => (
+      {/* Table — sticky header inside scroll container */}
+      <div
+        className="rounded-lg overflow-hidden"
+        style={{ border: '1px solid var(--border-default)' }}
+      >
+        <div className="overflow-auto max-h-[calc(100vh-340px)]">
+          <table className="w-full text-sm border-collapse">
+            <thead className="sticky top-0 z-10">
+              <tr style={{
+                background: 'rgba(14,14,20,0.92)',
+                backdropFilter: 'blur(12px)',
+                WebkitBackdropFilter: 'blur(12px)',
+                borderBottom: '1px solid var(--border-default)',
+              }}>
+                {COLS.map(({ key, label }, i) => (
                   <th
                     key={i}
                     scope="col"
                     className={cn(
-                      'px-4 py-2.5 text-left text-[11px] font-semibold text-zinc-400',
-                      key ? 'cursor-pointer hover:text-zinc-200' : ''
+                      'px-4 py-3 text-left text-[11px] font-semibold whitespace-nowrap select-none',
+                      key ? 'cursor-pointer transition-colors' : ''
                     )}
+                    style={{ color: key === sortKey ? 'var(--brand-hover)' : 'var(--text-tertiary)' }}
                     onClick={key ? () => handleSort(key) : undefined}
                   >
                     <div className="flex items-center gap-1.5">
@@ -194,52 +263,82 @@ export function CatalogTable({ rows, loading }: CatalogTableProps) {
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-800">
+            <tbody>
               {loading ? (
-                Array.from({ length: 5 }).map((_, i) => (
-                  <tr key={i} className="animate-pulse">
+                Array.from({ length: 8 }).map((_, i) => (
+                  <tr
+                    key={i}
+                    style={{ borderBottom: '1px solid var(--border-subtle)', animationDelay: `${i * 60}ms` }}
+                  >
                     {Array.from({ length: 7 }).map((_, j) => (
                       <td key={j} className="px-4 py-3">
-                        <div className="h-3 bg-zinc-800 rounded" style={{ width: `${50 + (j * 10) % 40}%` }} />
+                        <div
+                          className="shimmer h-3 rounded"
+                          style={{ width: `${40 + (j * 12) % 45}%` }}
+                        />
                       </td>
                     ))}
                   </tr>
                 ))
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-10 text-center text-xs text-zinc-500">
+                  <td colSpan={7} className="px-4 py-12 text-center text-sm" style={{ color: 'var(--text-tertiary)' }}>
                     No entries match current filters
                   </td>
                 </tr>
               ) : (
                 filtered.map((row, i) => (
-                  <tr key={i} className="hover:bg-zinc-900/50 transition-colors">
-                    <td className="px-4 py-3 text-xs font-medium text-zinc-200">
+                  <tr
+                    key={i}
+                    className="table-row-hover group"
+                    style={{
+                      borderBottom: '1px solid var(--border-subtle)',
+                      // Left accent line appears on hover via CSS
+                    }}
+                  >
+                    {/* Provider */}
+                    <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <ProviderLogo provider={row.provider} size="sm" />
-                        <span>{providerDisplayName(row.provider)}</span>
+                        <span className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>
+                          {providerDisplayName(row.provider)}
+                        </span>
                       </div>
                     </td>
+                    {/* Workload */}
                     <td className="px-4 py-3">
                       <Badge variant="default" className="text-[10px]">
                         {workloadDisplayName(row.workload_type)}
                       </Badge>
                     </td>
+                    {/* SKU / Model */}
                     <td className="px-4 py-3 max-w-[200px]">
-                      <div className="text-xs text-zinc-300 truncate">{row.sku_name}</div>
+                      <div className="text-xs truncate" style={{ color: 'var(--text-secondary)' }}>
+                        {row.sku_name}
+                      </div>
                       {row.model_name && (
-                        <div className="text-[10px] text-zinc-600 truncate">{row.model_name}</div>
+                        <div className="text-[10px] font-mono truncate mt-0.5" style={{ color: 'var(--text-disabled)' }}>
+                          {row.model_name}
+                        </div>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-[11px] text-zinc-400 font-mono">{row.unit_name}</td>
-                    <td className="px-4 py-3 text-xs font-bold text-zinc-100 font-numeric">
-                      {formatUSD(row.unit_price_usd, row.unit_price_usd < 0.01 ? 6 : 4)}
+                    {/* Unit */}
+                    <td className="px-4 py-3 text-[11px] font-mono" style={{ color: 'var(--text-tertiary)' }}>
+                      {row.unit_name}
                     </td>
+                    {/* Price — visually dominant */}
+                    <td className="px-4 py-3">
+                      <span className="text-sm font-bold font-numeric" style={{ color: 'var(--text-primary)' }}>
+                        {formatUSD(row.unit_price_usd, row.unit_price_usd < 0.01 ? 6 : 4)}
+                      </span>
+                    </td>
+                    {/* Billing */}
                     <td className="px-4 py-3">
                       <Badge variant="default" className="text-[10px]">
                         {billingModeLabel(row.billing_mode)}
                       </Badge>
                     </td>
+                    {/* Confidence */}
                     <td className="px-4 py-3">
                       <Badge
                         variant={row.confidence as 'high' | 'official' | 'medium' | 'estimated' | 'low' | 'vendor_list'}

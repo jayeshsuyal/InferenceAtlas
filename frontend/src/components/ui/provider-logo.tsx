@@ -76,12 +76,14 @@ interface ProviderLogoProps {
   className?: string
 }
 
+const missingLogoProviders = new Set<string>()
+
 export function ProviderLogo({ provider, size = 'md', className }: ProviderLogoProps) {
   const providerKey = normalizeProviderToken(provider)
   const label = PROVIDER_LABELS[providerKey] ?? provider
   const initials = useMemo(() => initialsFromLabel(label), [label])
   const colorClass = useMemo(() => colorFromToken(providerKey), [providerKey])
-  const [hasImage, setHasImage] = useState(true)
+  const [hasImage, setHasImage] = useState(!missingLogoProviders.has(providerKey))
   const imageSrc = `/logos/providers/${providerKey}.svg`
 
   if (hasImage) {
@@ -94,7 +96,10 @@ export function ProviderLogo({ provider, size = 'md', className }: ProviderLogoP
           SIZE_CLASS[size],
           className
         )}
-        onError={() => setHasImage(false)}
+        onError={() => {
+          missingLogoProviders.add(providerKey)
+          setHasImage(false)
+        }}
         loading="lazy"
       />
     )
