@@ -208,3 +208,39 @@ class CopilotTurnResponse(BaseModel):
     follow_up_questions: list[str]
     apply_payload: Optional[dict[str, Any]]
     is_ready: bool
+
+
+class ReportSection(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    title: str
+    bullets: list[str] = Field(default_factory=list)
+
+
+class ReportGenerateRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    mode: Literal["llm", "catalog"]
+    title: str = Field(default="InferenceAtlas Optimization Report", min_length=1, max_length=200)
+    include_charts: bool = True
+    llm_planning: Optional[LLMPlanningResponse] = None
+    catalog_ranking: Optional[CatalogRankingResponse] = None
+
+    @model_validator(mode="after")
+    def validate_mode_payload(self) -> "ReportGenerateRequest":
+        if self.mode == "llm" and self.llm_planning is None:
+            raise ValueError("llm_planning is required when mode='llm'")
+        if self.mode == "catalog" and self.catalog_ranking is None:
+            raise ValueError("catalog_ranking is required when mode='catalog'")
+        return self
+
+
+class ReportGenerateResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    report_id: str
+    generated_at_utc: str
+    title: str
+    mode: Literal["llm", "catalog"]
+    sections: list[ReportSection] = Field(default_factory=list)
+    markdown: str

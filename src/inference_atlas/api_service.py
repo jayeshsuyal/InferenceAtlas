@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
 from collections import defaultdict
+from datetime import datetime, timezone
 from typing import Any
 
 from inference_atlas.ai_copilot import next_copilot_turn
@@ -22,6 +24,9 @@ from inference_atlas.api_models import (
     LLMPlanningRequest,
     LLMPlanningResponse,
     ProviderDiagnostic,
+    ReportGenerateRequest,
+    ReportGenerateResponse,
+    ReportSection,
     RankedCatalogOffer,
     RankedPlan,
     RiskBreakdown,
@@ -33,6 +38,34 @@ from inference_atlas.catalog_ranking import (
 from inference_atlas.data_loader import get_catalog_v2_rows
 from inference_atlas.invoice_analyzer import analyze_invoice_csv
 from inference_atlas.mvp_planner import get_provider_compatibility, rank_configs
+
+
+EXCLUSION_REASON_LABELS: dict[str, str] = {
+    "provider_filtered_out": "provider filter",
+    "unit_mismatch": "unit mismatch",
+    "non_comparable_normalization": "non-comparable normalization",
+    "missing_throughput": "missing throughput metadata",
+    "budget": "budget filter",
+}
+
+
+def _build_exclusion_summary_warnings(exclusion_breakdown: dict[str, int]) -> list[str]:
+    ranked_reasons = sorted(
+        (
+            (reason, count)
+            for reason, count in exclusion_breakdown.items()
+            if count > 0
+        ),
+        key=lambda item: (-item[1], item[0]),
+    )
+    if not ranked_reasons:
+        return []
+    top_items = ranked_reasons[:3]
+    rendered = ", ".join(
+        f"{EXCLUSION_REASON_LABELS.get(reason, reason)} ({count})"
+        for reason, count in top_items
+    )
+    return [f"Top exclusion reasons: {rendered}."]
 
 
 def _normalize_state(payload: CopilotTurnRequest) -> tuple[str, dict[str, Any]]:
@@ -211,6 +244,7 @@ def run_rank_catalog(payload: CatalogRankingRequest) -> CatalogRankingResponse:
         warnings.append(
             f"Applied fallback step '{run.selected_step}' to return best available matches."
         )
+    warnings.extend(_build_exclusion_summary_warnings(run.exclusion_breakdown))
     return CatalogRankingResponse(
         offers=offers,
         provider_diagnostics=diagnostics,
@@ -355,6 +389,120 @@ def run_ai_assist(payload: AIAssistRequest) -> AIAssistResponse:
     reply = _build_assist_reply(text, workload, providers)
     suggested_action = "run_optimize" if "lowest current unit prices" in reply else None
     return AIAssistResponse(reply=reply, suggested_action=suggested_action)
+
+
+def _format_money(value: float | None) -> str:
+    if value is None:
+        return "n/a"
+    return f"${value:,.2f}"
+
+
+def _llm_report_sections(response: LLMPlanningResponse) -> list[ReportSection]:
+    if not response.plans:
+        return [
+            ReportSection(
+                title="Executive Summary",
+                bullets=["No feasible LLM plans were returned for the current constraints."],
+            )
+        ]
+    winner = response.plans[0]
+    return [
+        ReportSection(
+            title="Executive Summary",
+            bullets=[
+                f"Top plan: {winner.provider_name} ({winner.offering_id}).",
+                f"Estimated monthly cost: {_format_money(winner.monthly_cost_usd)}.",
+                f"Total risk score: {winner.risk.total_risk:.3f}.",
+            ],
+        ),
+        ReportSection(
+            title="Top Recommendations",
+            bullets=[
+                f"#{plan.rank} {plan.provider_name} · {_format_money(plan.monthly_cost_usd)} · {plan.confidence}"
+                for plan in response.plans[:5]
+            ],
+        ),
+        ReportSection(
+            title="Diagnostics",
+            bullets=[
+                f"Included/compatible providers: {sum(1 for d in response.provider_diagnostics if d.status == 'included')}.",
+                f"Excluded providers: {sum(1 for d in response.provider_diagnostics if d.status != 'included')}.",
+                *response.warnings[:3],
+            ],
+        ),
+    ]
+
+
+def _catalog_report_sections(response: CatalogRankingResponse) -> list[ReportSection]:
+    if not response.offers:
+        return [
+            ReportSection(
+                title="Executive Summary",
+                bullets=["No matching catalog offers were returned for the selected constraints."],
+            )
+        ]
+    winner = response.offers[0]
+    return [
+        ReportSection(
+            title="Executive Summary",
+            bullets=[
+                f"Top offer: {winner.provider} ({winner.sku_name}).",
+                f"Estimated monthly cost: {_format_money(winner.monthly_estimate_usd)}.",
+                f"Unit price: {_format_money(winner.unit_price_usd)} per {winner.unit_name}.",
+            ],
+        ),
+        ReportSection(
+            title="Top Recommendations",
+            bullets=[
+                f"#{offer.rank} {offer.provider} · {_format_money(offer.monthly_estimate_usd)} · {offer.confidence}"
+                for offer in response.offers[:10]
+            ],
+        ),
+        ReportSection(
+            title="Filter Diagnostics",
+            bullets=[
+                f"Excluded offers count: {response.excluded_count}.",
+                *response.warnings[:4],
+            ],
+        ),
+    ]
+
+
+def _sections_to_markdown(title: str, mode: str, generated_at_utc: str, sections: list[ReportSection]) -> str:
+    lines = [f"# {title}", "", f"- Mode: `{mode}`", f"- Generated at (UTC): `{generated_at_utc}`", ""]
+    for section in sections:
+        lines.append(f"## {section.title}")
+        if section.bullets:
+            lines.extend([f"- {item}" for item in section.bullets])
+        else:
+            lines.append("- n/a")
+        lines.append("")
+    return "\n".join(lines).strip() + "\n"
+
+
+def run_generate_report(payload: ReportGenerateRequest) -> ReportGenerateResponse:
+    generated_at_utc = datetime.now(timezone.utc).isoformat()
+    if payload.mode == "llm":
+        assert payload.llm_planning is not None
+        sections = _llm_report_sections(payload.llm_planning)
+    else:
+        assert payload.catalog_ranking is not None
+        sections = _catalog_report_sections(payload.catalog_ranking)
+    markdown = _sections_to_markdown(
+        title=payload.title,
+        mode=payload.mode,
+        generated_at_utc=generated_at_utc,
+        sections=sections,
+    )
+    report_hash = hashlib.sha1(markdown.encode("utf-8")).hexdigest()[:12]
+    return ReportGenerateResponse(
+        report_id=f"rep_{report_hash}",
+        generated_at_utc=generated_at_utc,
+        title=payload.title,
+        mode=payload.mode,
+        sections=sections,
+        markdown=markdown,
+    )
 
 
 def parse_invoice_upload(file_bytes: bytes) -> tuple[list[dict[str, Any]], list[str]]:

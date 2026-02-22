@@ -15,11 +15,14 @@ from inference_atlas.api_models import (
     InvoiceAnalysisResponse,
     LLMPlanningRequest,
     LLMPlanningResponse,
+    ReportGenerateRequest,
+    ReportGenerateResponse,
 )
 from inference_atlas.api_service import (
     run_ai_assist,
     run_browse_catalog,
     run_copilot_turn,
+    run_generate_report,
     run_invoice_analyze,
     run_plan_llm,
     run_rank_catalog,
@@ -109,6 +112,15 @@ def create_app():
     def ai_assist(payload: AIAssistRequest) -> AIAssistResponse:
         try:
             return run_ai_assist(payload)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    @app.post("/api/v1/report/generate", response_model=ReportGenerateResponse)
+    def generate_report(payload: ReportGenerateRequest) -> ReportGenerateResponse:
+        try:
+            return run_generate_report(payload)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except Exception as exc:  # noqa: BLE001

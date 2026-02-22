@@ -35,9 +35,9 @@ def test_fetch_rows_for_provider_uses_api_when_available(monkeypatch) -> None:
     assert rows[0].sku_key == "api_row"
 
 
-def test_fetch_rows_for_provider_falls_back_when_api_empty(monkeypatch) -> None:
+def test_fetch_rows_for_provider_falls_back_to_provider_csv_when_api_empty(monkeypatch) -> None:
     monkeypatch.setitem(API_CONNECTORS, "fal_ai", lambda: [])
-    expected = normalized_catalog.fetch_rows_for_provider("fal_ai")
+    expected = provider_csv.fetch_rows_for_provider("fal_ai")
     rows = fetch_rows_for_provider("fal_ai")
     assert rows
     assert rows == expected

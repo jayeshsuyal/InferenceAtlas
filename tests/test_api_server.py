@@ -140,3 +140,43 @@ def test_invoice_analyze_endpoint_requires_file() -> None:
     client = _client()
     response = client.post("/api/v1/invoice/analyze", files={})
     assert response.status_code == 422
+
+
+def test_generate_report_endpoint() -> None:
+    client = _client()
+    payload = {
+        "mode": "catalog",
+        "title": "API Report",
+        "catalog_ranking": {
+            "offers": [
+                {
+                    "rank": 1,
+                    "provider": "openai",
+                    "sku_name": "whisper-1",
+                    "billing_mode": "per_unit",
+                    "unit_price_usd": 0.006,
+                    "normalized_price": 0.36,
+                    "unit_name": "audio_min",
+                    "confidence": "official",
+                    "monthly_estimate_usd": 10.0,
+                    "required_replicas": None,
+                    "capacity_check": "unknown",
+                    "previous_unit_price_usd": None,
+                    "price_change_abs_usd": None,
+                    "price_change_pct": None,
+                }
+            ],
+            "provider_diagnostics": [],
+            "excluded_count": 0,
+            "warnings": [],
+            "relaxation_applied": False,
+            "relaxation_steps": [],
+            "exclusion_breakdown": {},
+        },
+    }
+    response = client.post("/api/v1/report/generate", json=payload)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["mode"] == "catalog"
+    assert body["report_id"].startswith("rep_")
+    assert "markdown" in body

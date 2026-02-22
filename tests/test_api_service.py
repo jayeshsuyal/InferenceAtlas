@@ -9,11 +9,13 @@ from inference_atlas.api_models import (
     CatalogRankingRequest,
     CopilotTurnRequest,
     LLMPlanningRequest,
+    ReportGenerateRequest,
 )
 from inference_atlas.api_service import (
     run_ai_assist,
     run_browse_catalog,
     run_copilot_turn,
+    run_generate_report,
     run_invoice_analyze,
     run_plan_llm,
     run_rank_catalog,
@@ -138,3 +140,160 @@ def test_run_rank_catalog_sets_relaxation_metadata_on_fallback() -> None:
     )
     assert response.relaxation_applied is True
     assert any(step["step"] == "relax_unit" for step in response.relaxation_steps)
+
+
+def test_run_rank_catalog_response_contract_shape_is_stable() -> None:
+    response = run_rank_catalog(
+        CatalogRankingRequest(
+            workload_type="speech_to_text",
+            allowed_providers=[],
+            unit_name=None,
+            monthly_usage=0.0,
+            monthly_budget_max_usd=0.0,
+            top_k=3,
+            confidence_weighted=True,
+            comparator_mode="normalized",
+            throughput_aware=False,
+        )
+    )
+    payload = response.model_dump()
+    assert set(payload) == {
+        "offers",
+        "provider_diagnostics",
+        "excluded_count",
+        "warnings",
+        "relaxation_applied",
+        "relaxation_steps",
+        "exclusion_breakdown",
+    }
+    assert set(payload["exclusion_breakdown"]) >= {
+        "provider_filtered_out",
+        "unit_mismatch",
+        "non_comparable_normalization",
+        "missing_throughput",
+        "budget",
+    }
+    if payload["offers"]:
+        assert set(payload["offers"][0]) == {
+            "rank",
+            "provider",
+            "sku_name",
+            "billing_mode",
+            "unit_price_usd",
+            "normalized_price",
+            "unit_name",
+            "confidence",
+            "monthly_estimate_usd",
+            "required_replicas",
+            "capacity_check",
+            "previous_unit_price_usd",
+            "price_change_abs_usd",
+            "price_change_pct",
+        }
+
+
+def test_run_rank_catalog_relaxation_order_is_progressive() -> None:
+    response = run_rank_catalog(
+        CatalogRankingRequest(
+            workload_type="vision",
+            allowed_providers=[],
+            unit_name="audio_min",
+            monthly_usage=2.0,
+            monthly_budget_max_usd=1.0,
+            top_k=5,
+            confidence_weighted=True,
+            comparator_mode="listed",
+            throughput_aware=False,
+        )
+    )
+    attempted_steps = [step["step"] for step in response.relaxation_steps if step["attempted"]]
+    assert attempted_steps[0] == "strict"
+    assert attempted_steps == sorted(
+        attempted_steps,
+        key={"strict": 0, "relax_unit": 1, "relax_budget": 2, "relax_provider": 3}.get,
+    )
+
+
+def test_run_rank_catalog_includes_exclusion_summary_warning() -> None:
+    response = run_rank_catalog(
+        CatalogRankingRequest(
+            workload_type="vision",
+            allowed_providers=[],
+            unit_name="audio_min",
+            monthly_usage=10.0,
+            monthly_budget_max_usd=0.0,
+            top_k=5,
+            confidence_weighted=True,
+            comparator_mode="normalized",
+            throughput_aware=True,
+            strict_capacity_check=True,
+        )
+    )
+    assert any(warning.startswith("Top exclusion reasons: ") for warning in response.warnings)
+
+
+def test_run_rank_catalog_exclusion_summary_is_bounded() -> None:
+    response = run_rank_catalog(
+        CatalogRankingRequest(
+            workload_type="vision",
+            allowed_providers=[],
+            unit_name=None,
+            monthly_usage=1.0,
+            monthly_budget_max_usd=1.0,
+            top_k=5,
+            confidence_weighted=True,
+            comparator_mode="normalized",
+            throughput_aware=True,
+            strict_capacity_check=True,
+        )
+    )
+    summary = next((w for w in response.warnings if w.startswith("Top exclusion reasons: ")), "")
+    assert summary
+    assert summary.count("(") <= 3
+
+
+def test_run_generate_report_llm_mode_produces_markdown() -> None:
+    llm = run_plan_llm(
+        LLMPlanningRequest(
+            tokens_per_day=3_000_000,
+            model_bucket="7b",
+            provider_ids=[],
+            top_k=3,
+        )
+    )
+    report = run_generate_report(
+        ReportGenerateRequest(
+            mode="llm",
+            title="LLM Test Report",
+            llm_planning=llm,
+        )
+    )
+    assert report.mode == "llm"
+    assert report.report_id.startswith("rep_")
+    assert "LLM Test Report" in report.markdown
+    assert "## Executive Summary" in report.markdown
+
+
+def test_run_generate_report_catalog_mode_produces_markdown() -> None:
+    catalog = run_rank_catalog(
+        CatalogRankingRequest(
+            workload_type="speech_to_text",
+            allowed_providers=[],
+            unit_name=None,
+            monthly_usage=20.0,
+            top_k=3,
+            confidence_weighted=True,
+            comparator_mode="normalized",
+            throughput_aware=False,
+        )
+    )
+    report = run_generate_report(
+        ReportGenerateRequest(
+            mode="catalog",
+            title="Catalog Test Report",
+            catalog_ranking=catalog,
+        )
+    )
+    assert report.mode == "catalog"
+    assert "Catalog Test Report" in report.markdown
+    assert "## Top Recommendations" in report.markdown
