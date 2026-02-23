@@ -40,6 +40,8 @@ export function CatalogTable({ rows, loading }: CatalogTableProps) {
   })
 
   const filters = watch()
+  const isWorkloadFirst = browseMode === 'workload_first'
+  const hasPrimarySelection = isWorkloadFirst ? Boolean(filters.workload_type) : Boolean(filters.provider)
 
   function handleSort(key: SortKey) {
     if (key === sortKey) {
@@ -49,20 +51,6 @@ export function CatalogTable({ rows, loading }: CatalogTableProps) {
       setSortDir('asc')
     }
   }
-
-  const scopedForProvider = useMemo(() => {
-    if (browseMode === 'workload_first') {
-      return filters.workload_type ? rows.filter((r) => r.workload_type === filters.workload_type) : rows
-    }
-    return filters.provider ? rows.filter((r) => r.provider === filters.provider) : rows
-  }, [rows, filters.workload_type, filters.provider, browseMode])
-
-  const scopedForWorkload = useMemo(() => {
-    if (browseMode === 'provider_first') {
-      return filters.provider ? rows.filter((r) => r.provider === filters.provider) : rows
-    }
-    return filters.workload_type ? rows.filter((r) => r.workload_type === filters.workload_type) : rows
-  }, [rows, filters.workload_type, filters.provider, browseMode])
 
   const filtered = useMemo(() => {
     let out = [...rows]
@@ -91,8 +79,29 @@ export function CatalogTable({ rows, loading }: CatalogTableProps) {
     return out
   }, [rows, filters, sortKey, sortDir])
 
-  const uniqueProviders = useMemo(() => [...new Set(scopedForProvider.map((r) => r.provider))].sort(), [scopedForProvider])
-  const uniqueWorkloads = useMemo(() => [...new Set(scopedForWorkload.map((r) => r.workload_type))].sort(), [scopedForWorkload])
+  const allProviders = useMemo(() => [...new Set(rows.map((r) => r.provider))].sort(), [rows])
+  const allWorkloads = useMemo(() => [...new Set(rows.map((r) => r.workload_type))].sort(), [rows])
+
+  // Options follow selected browse mode:
+  // workload_first: workload is primary filter, provider options depend on workload.
+  // provider_first: provider is primary filter, workload options depend on provider.
+  const uniqueProviders = useMemo(() => {
+    if (browseMode === 'provider_first') return allProviders
+    if (!filters.workload_type) return allProviders
+    return [...new Set(rows
+      .filter((r) => r.workload_type === filters.workload_type)
+      .map((r) => r.provider))]
+      .sort()
+  }, [allProviders, rows, browseMode, filters.workload_type])
+
+  const uniqueWorkloads = useMemo(() => {
+    if (browseMode === 'workload_first') return allWorkloads
+    if (!filters.provider) return allWorkloads
+    return [...new Set(rows
+      .filter((r) => r.provider === filters.provider)
+      .map((r) => r.workload_type))]
+      .sort()
+  }, [allWorkloads, rows, browseMode, filters.provider])
   const uniqueModels = useMemo(() => {
     let s = rows
     if (filters.workload_type) s = s.filter((r) => r.workload_type === filters.workload_type)
@@ -142,6 +151,21 @@ export function CatalogTable({ rows, loading }: CatalogTableProps) {
     return () => window.clearTimeout(timer)
   }, [scopeNotice])
 
+  // Primary selector drives scope; clear dependent filters when it changes.
+  useEffect(() => {
+    if (!isWorkloadFirst) return
+    setValue('provider', '')
+    setValue('model_name', '')
+    setValue('unit_name', '')
+  }, [filters.workload_type, isWorkloadFirst, setValue])
+
+  useEffect(() => {
+    if (isWorkloadFirst) return
+    setValue('workload_type', '')
+    setValue('model_name', '')
+    setValue('unit_name', '')
+  }, [filters.provider, isWorkloadFirst, setValue])
+
   const COLS = [
     { key: 'provider' as SortKey, label: 'Provider' },
     { key: 'workload_type' as SortKey, label: 'Workload' },
@@ -151,6 +175,48 @@ export function CatalogTable({ rows, loading }: CatalogTableProps) {
     { key: null, label: 'Billing' },
     { key: null, label: 'Confidence' },
   ]
+
+  const primaryLabel = isWorkloadFirst ? 'Primary: Workload' : 'Primary: Provider'
+  const dependentLabel = isWorkloadFirst ? 'Dependent: Provider' : 'Dependent: Workload'
+
+  const workloadSelect = (
+    <Select
+      value={filters.workload_type || '__all__'}
+      onValueChange={(v) => setValue('workload_type', v === '__all__' ? '' : v)}
+    >
+      <SelectTrigger disabled={!isWorkloadFirst && !filters.provider}>
+        <SelectValue placeholder={isWorkloadFirst ? 'All workloads' : 'Select provider first'} />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="__all__">All workloads</SelectItem>
+        {WORKLOAD_TYPES.filter((w) => uniqueWorkloads.includes(w.id)).map((w) => (
+          <SelectItem key={w.id} value={w.id}>{w.label}</SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  )
+
+  const providerSelect = (
+    <Select
+      value={filters.provider || '__all__'}
+      onValueChange={(v) => setValue('provider', v === '__all__' ? '' : v)}
+    >
+      <SelectTrigger disabled={isWorkloadFirst && !filters.workload_type}>
+        <SelectValue placeholder={isWorkloadFirst ? 'Select workload first' : 'All providers'} />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="__all__">All providers</SelectItem>
+        {uniqueProviders.map((p) => (
+          <SelectItem key={p} value={p}>
+            <div className="flex items-center gap-2">
+              <ProviderLogo provider={p} size="sm" />
+              <span>{providerDisplayName(p)}</span>
+            </div>
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  )
 
   return (
     <div className="space-y-4">
@@ -166,7 +232,9 @@ export function CatalogTable({ rows, loading }: CatalogTableProps) {
             type="button"
             onClick={() => {
               setBrowseMode(opt.value)
-              // Reset lower-granularity filters on mode switch to avoid stale intersections.
+              // Reset dependent filters on mode switch to avoid stale intersections.
+              setValue('provider', '')
+              setValue('workload_type', '')
               setValue('model_name', '')
               setValue('unit_name', '')
             }}
@@ -183,44 +251,33 @@ export function CatalogTable({ rows, loading }: CatalogTableProps) {
             {opt.label}
           </button>
         ))}
+        <span
+          className="rounded-full px-2.5 py-1 text-[10px] uppercase tracking-[0.08em] border"
+          style={{
+            background: 'rgba(124,92,252,0.12)',
+            borderColor: 'rgba(124,92,252,0.35)',
+            color: 'var(--brand-hover)',
+          }}
+        >
+          Driver: {isWorkloadFirst ? 'Workload' : 'Provider'}
+        </span>
       </div>
 
       {/* Filters */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-2.5">
-        <Select
-          value={filters.workload_type || '__all__'}
-          onValueChange={(v) => setValue('workload_type', v === '__all__' ? '' : v)}
-        >
-          <SelectTrigger>
-            <SelectValue placeholder="All workloads" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__all__">All workloads</SelectItem>
-            {WORKLOAD_TYPES.filter((w) => uniqueWorkloads.includes(w.id)).map((w) => (
-              <SelectItem key={w.id} value={w.id}>{w.label}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="space-y-1">
+          <div className="text-[10px] uppercase tracking-[0.08em]" style={{ color: 'var(--text-tertiary)' }}>
+            {primaryLabel}
+          </div>
+          {isWorkloadFirst ? workloadSelect : providerSelect}
+        </div>
 
-        <Select
-          value={filters.provider || '__all__'}
-          onValueChange={(v) => setValue('provider', v === '__all__' ? '' : v)}
-        >
-          <SelectTrigger>
-            <SelectValue placeholder="All providers" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__all__">All providers</SelectItem>
-            {uniqueProviders.map((p) => (
-              <SelectItem key={p} value={p}>
-                <div className="flex items-center gap-2">
-                  <ProviderLogo provider={p} size="sm" />
-                  <span>{providerDisplayName(p)}</span>
-                </div>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="space-y-1">
+          <div className="text-[10px] uppercase tracking-[0.08em]" style={{ color: 'var(--text-tertiary)' }}>
+            {dependentLabel}
+          </div>
+          {isWorkloadFirst ? providerSelect : workloadSelect}
+        </div>
 
         <Select
           value={filters.model_name || '__all__'}
@@ -269,6 +326,11 @@ export function CatalogTable({ rows, loading }: CatalogTableProps) {
           </>
         )}
       </div>
+      {!hasPrimarySelection && (
+        <div className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
+          {isWorkloadFirst ? 'Choose a workload first to narrow providers.' : 'Choose a provider first to narrow workloads.'}
+        </div>
+      )}
       {scopeNotice && (
         <div
           role="status"
