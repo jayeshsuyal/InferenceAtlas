@@ -16,7 +16,7 @@
   --brand-gradient-text: linear-gradient(135deg, #a78bfa 0%, #818cf8 50%, #c4b5fd 100%);
 
   /* Surfaces — layered depth scale */
-  --bg-base: #0B0B0F;
+  --bg-base: #000000;
   --bg-surface: #12121A;
   --bg-elevated: #171723;
   --bg-showcase: #000000;
