@@ -140,6 +140,7 @@ def test_run_rank_catalog_sets_relaxation_metadata_on_fallback() -> None:
     )
     assert response.relaxation_applied is True
     assert any(step["step"] == "relax_unit" for step in response.relaxation_steps)
+    assert any("Applied fallback step '" in warning for warning in response.warnings)
 
 
 def test_run_rank_catalog_response_contract_shape_is_stable() -> None:
