@@ -6,6 +6,7 @@ import { LLMForm } from '@/components/optimize/LLMForm'
 import { NonLLMForm } from '@/components/optimize/NonLLMForm'
 import { CopilotPanel } from '@/components/optimize/CopilotPanel'
 import { ResultsTable } from '@/components/optimize/ResultsTable'
+import { ReportCharts } from '@/components/optimize/ReportCharts'
 import { SkeletonCard } from '@/components/ui/skeleton'
 import { downloadReport, generateReport, planLLMWorkload, rankCatalogOffers } from '@/services/api'
 import type { LLMFormValues, NonLLMFormValues } from '@/schemas/forms'
@@ -600,6 +601,14 @@ export function OptimizePage() {
                       </p>
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* Report charts — rendered when backend populates charts[] */}
+              {reportData?.charts && reportData.charts.length > 0 && (
+                <div>
+                  <div className="micro-label mb-2">Chart Insights</div>
+                  <ReportCharts charts={reportData.charts} />
                 </div>
               )}
             </div>

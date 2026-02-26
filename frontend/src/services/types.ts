@@ -238,6 +238,48 @@ export interface CopilotTurnResponse {
   is_ready: boolean
 }
 
+// ─── Report Charts ────────────────────────────────────────────────────────────
+
+export type ChartType = 'bar' | 'line' | 'stacked_bar' | 'step_line'
+export type ChartUnit = 'usd' | '%' | 'count' | 'risk_score'
+
+export interface ReportChartPoint {
+  x?: string | number
+  y?: number
+  value?: number
+  rank?: number
+  step?: string
+  step_index?: number
+  confidence?: string
+  provider?: string
+  provider_name?: string
+  sku_name?: string
+  label?: string
+}
+
+export interface ReportChartSeries {
+  id: string
+  label?: string
+  name?: string
+  points?: ReportChartPoint[]
+  data?: ReportChartPoint[]
+  unit?: ChartUnit | string | null
+  color?: string
+}
+
+export interface ReportChart {
+  id: string
+  type: ChartType
+  title: string
+  x_label?: string
+  y_label?: string
+  legend?: string[]
+  meta?: Record<string, unknown>
+  description?: string
+  series: ReportChartSeries[]
+  sort_key?: 'rank' | 'cost' | 'risk'
+}
+
 // ─── Report Generation ────────────────────────────────────────────────────────
 
 export interface ReportSection {
@@ -263,6 +305,7 @@ export interface ReportGenerateResponse {
   mode: 'llm' | 'catalog'
   sections: ReportSection[]
   chart_data: Record<string, unknown>
+  charts?: ReportChart[]
   metadata: Record<string, unknown>
   output_format: 'markdown' | 'html' | 'pdf'
   narrative?: string | null
