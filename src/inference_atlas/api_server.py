@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from typing import Optional
 
 from inference_atlas.api_models import (
     AIAssistRequest,
@@ -95,9 +96,9 @@ def create_app():
 
     @app.get("/api/v1/catalog", response_model=CatalogBrowseResponse)
     def browse_catalog(
-        workload_type: str | None = None,
-        provider: str | None = None,
-        unit_name: str | None = None,
+        workload_type: Optional[str] = None,
+        provider: Optional[str] = None,
+        unit_name: Optional[str] = None,
     ) -> CatalogBrowseResponse:
         try:
             return run_browse_catalog(
