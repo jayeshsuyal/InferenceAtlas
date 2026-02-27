@@ -7,8 +7,10 @@ import base64
 import hashlib
 import html
 import io
+import os
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from inference_atlas.ai_copilot import next_copilot_turn
@@ -19,6 +21,13 @@ from inference_atlas.api_models import (
     CatalogBrowseResponse,
     CatalogRankingRequest,
     CatalogRankingResponse,
+    CostAuditDataGap,
+    CostAuditHardwareRecommendation,
+    CostAuditPricingVerdict,
+    CostAuditRecommendation,
+    CostAuditRequest,
+    CostAuditResponse,
+    CostAuditSavingsEstimate,
     CopilotTurnRequest,
     CopilotTurnResponse,
     InvoiceAnalysisResponse,
@@ -43,6 +52,8 @@ from inference_atlas.catalog_ranking import (
 )
 from inference_atlas.data_loader import get_catalog_v2_metadata, get_catalog_v2_rows
 from inference_atlas.invoice_analyzer import analyze_invoice_csv
+from inference_atlas.llm.router import LLMRouter
+from inference_atlas.llm.schema import WorkloadSpec
 from inference_atlas.mvp_planner import get_provider_compatibility, rank_configs
 
 
@@ -406,6 +417,536 @@ def run_ai_assist(payload: AIAssistRequest) -> AIAssistResponse:
     return AIAssistResponse(reply=reply, suggested_action=suggested_action)
 
 
+def _estimate_token_api_monthly_cost(payload: CostAuditRequest) -> float | None:
+    if payload.pricing_model != "token_api":
+        return None
+    in_tok = float(payload.monthly_input_tokens or 0.0)
+    out_tok = float(payload.monthly_output_tokens or 0.0)
+    total_m = (in_tok + out_tok) / 1_000_000.0
+    # Conservative baseline when provider/model specific pricing isn't supplied.
+    blended_per_1m = 2.0
+    return total_m * blended_per_1m
+
+
+GPU_HOURLY_USD: dict[str, float] = {
+    "A100_80GB": 2.7,
+    "H100_80GB": 4.0,
+    "H200": 5.5,
+    "B200": 6.2,
+}
+
+PROCUREMENT_DISCOUNT_FACTOR: dict[str, float] = {
+    "on_demand": 1.0,
+    "reserved": 0.6,
+    "spot": 0.4,
+    "mixed": 0.7,
+    "unknown": 1.0,
+}
+
+
+_GPU_PRICING_ROWS_CACHE: list[dict[str, str]] | None = None
+_GPU_PROVIDER_ALIASES: dict[str, str] = {
+    "together": "together_ai",
+    "together_ai": "together_ai",
+    "aws_rekognition": "aws",
+    "aws": "aws",
+    "fal_ai": "fal",
+    "fal": "fal",
+    "voyage_ai": "voyage",
+    "voyage": "voyage",
+    "google_cloud": "google_cloud",
+}
+
+
+def _modality_to_workload_type(modality: str) -> str:
+    mapping = {
+        "llm": "llm",
+        "asr": "speech_to_text",
+        "tts": "text_to_speech",
+        "embeddings": "embeddings",
+        "image_gen": "image_generation",
+        "video_gen": "video_generation",
+    }
+    return mapping.get(modality, "llm")
+
+
+def _canonical_gpu_provider(provider: str) -> str:
+    token = (provider or "").strip().lower()
+    return _GPU_PROVIDER_ALIASES.get(token, token)
+
+
+def _load_gpu_pricing_rows() -> list[dict[str, str]]:
+    global _GPU_PRICING_ROWS_CACHE
+    if _GPU_PRICING_ROWS_CACHE is not None:
+        return _GPU_PRICING_ROWS_CACHE
+    rows: list[dict[str, str]] = []
+    gpu_dir = Path("data/providers_csv/gpu")
+    if not gpu_dir.exists():
+        _GPU_PRICING_ROWS_CACHE = rows
+        return rows
+    for csv_path in sorted(gpu_dir.glob("*.csv")):
+        try:
+            with csv_path.open("r", encoding="utf-8", newline="") as handle:
+                reader = csv.DictReader(handle)
+                for row in reader:
+                    provider = (row.get("provider") or "").strip().lower()
+                    gpu_type = (row.get("gpu_type") or "").strip().upper()
+                    price_raw = (row.get("price_per_gpu_hour_usd") or "").strip()
+                    workload_type = (row.get("workload_type") or "").strip().lower()
+                    billing_mode = (row.get("billing_mode") or "").strip().lower()
+                    if not provider or not gpu_type or not price_raw:
+                        continue
+                    try:
+                        price = float(price_raw)
+                    except ValueError:
+                        continue
+                    if price <= 0:
+                        continue
+                    rows.append(
+                        {
+                            "provider": _canonical_gpu_provider(provider),
+                            "gpu_type": gpu_type,
+                            "workload_type": workload_type,
+                            "billing_mode": billing_mode,
+                            "price_per_gpu_hour_usd": f"{price:.10f}",
+                            "confidence": (row.get("confidence") or "").strip().lower(),
+                            "source_url": (row.get("source_url") or "").strip(),
+                        }
+                    )
+        except (OSError, csv.Error):
+            continue
+    _GPU_PRICING_ROWS_CACHE = rows
+    return rows
+
+
+def _resolve_gpu_hourly_from_csv(
+    payload: CostAuditRequest,
+    preferred_gpu_type: str | None,
+) -> tuple[float | None, str | None, str | None, str | None, str | None]:
+    """Return hourly rate + metadata from provider GPU CSV when possible."""
+    rows = _load_gpu_pricing_rows()
+    if not rows:
+        return None, None, None, None, None
+
+    selected_providers = [_canonical_gpu_provider(p) for p in payload.providers if p]
+    selected_provider_set = set(selected_providers)
+    workload_type = _modality_to_workload_type(payload.modality)
+    preferred_billing = "dedicated_hourly" if payload.traffic_pattern == "steady" else "autoscale_hourly"
+    preferred_gpu = (preferred_gpu_type or "").strip().upper() if preferred_gpu_type else None
+
+    candidates: list[tuple[int, int, float, dict[str, str]]] = []
+    for row in rows:
+        provider = row["provider"]
+        if selected_provider_set and provider not in selected_provider_set:
+            continue
+        gpu_type = row["gpu_type"]
+        if preferred_gpu and gpu_type != preferred_gpu:
+            continue
+        try:
+            price = float(row["price_per_gpu_hour_usd"])
+        except ValueError:
+            continue
+        if price <= 0:
+            continue
+        provider_rank = selected_providers.index(provider) if provider in selected_provider_set else 999
+        match_score = 0
+        if row.get("workload_type") == workload_type:
+            match_score += 4
+        if row.get("billing_mode") == preferred_billing:
+            match_score += 2
+        if preferred_gpu and gpu_type == preferred_gpu:
+            match_score += 3
+        if selected_provider_set:
+            match_score += 3
+        candidates.append((provider_rank, -match_score, price, row))
+
+    if not candidates:
+        return None, None, None, None, None
+
+    candidates.sort(key=lambda item: (item[0], item[1], item[2]))
+    chosen = candidates[0][3]
+    try:
+        chosen_price = float(chosen["price_per_gpu_hour_usd"])
+    except ValueError:
+        return None, None, None, None, None
+    return (
+        chosen_price,
+        chosen.get("provider"),
+        chosen.get("gpu_type"),
+        chosen.get("source_url") or None,
+        chosen.get("confidence") or None,
+    )
+
+
+def _estimate_dedicated_gpu_monthly_cost(payload: CostAuditRequest) -> tuple[float, int, str, float, str]:
+    total_tokens = float(payload.monthly_input_tokens or 0.0) + float(payload.monthly_output_tokens or 0.0)
+    if payload.gpu_count is not None and payload.gpu_count > 0:
+        gpu_count = int(payload.gpu_count)
+    elif total_tokens >= 5_000_000_000:
+        gpu_count = 8
+    elif total_tokens >= 2_000_000_000:
+        gpu_count = 4
+    elif total_tokens >= 500_000_000:
+        gpu_count = 2
+    else:
+        gpu_count = 1
+
+    requested_gpu_type = (payload.gpu_type or "H100_80GB").strip().upper()
+    csv_hourly, csv_provider, csv_gpu_type, csv_source_url, csv_confidence = _resolve_gpu_hourly_from_csv(
+        payload=payload,
+        preferred_gpu_type=requested_gpu_type,
+    )
+    if csv_hourly is None:
+        fallback_hourly = GPU_HOURLY_USD.get(requested_gpu_type, GPU_HOURLY_USD["H100_80GB"])
+        hourly = fallback_hourly
+        gpu_type = requested_gpu_type
+        pricing_basis = f"heuristic_prior:{gpu_type}"
+    else:
+        hourly = csv_hourly
+        gpu_type = csv_gpu_type or requested_gpu_type
+        provider_label = csv_provider or "catalog"
+        if csv_source_url:
+            pricing_basis = f"provider_csv:{provider_label}:{csv_source_url}"
+        else:
+            confidence_label = csv_confidence or "unknown_confidence"
+            pricing_basis = f"provider_csv:{provider_label}:{confidence_label}"
+
+    procurement = payload.gpu_procurement_type
+    factor = PROCUREMENT_DISCOUNT_FACTOR.get(procurement, 1.0)
+    effective_hourly = hourly * factor
+    monthly = gpu_count * effective_hourly * 730.0
+    return monthly, gpu_count, gpu_type, effective_hourly, pricing_basis
+
+
+def _gap(field: str, impact: str, why: str) -> CostAuditDataGap:
+    return CostAuditDataGap(field=field, impact=impact, why_it_matters=why)
+
+
+def _priority_rank(priority: str) -> int:
+    return 0 if priority == "high" else 1 if priority == "medium" else 2
+
+
+def _impact_rank(impact: str) -> int:
+    return 0 if impact == "high" else 1 if impact == "medium" else 2
+
+
+def _combine_savings_pct(pcts: list[float]) -> float:
+    """Combine overlapping savings recommendations conservatively."""
+    remaining = 1.0
+    for pct in pcts:
+        bounded = max(0.0, min(100.0, float(pct)))
+        remaining *= (1.0 - (bounded / 100.0))
+    return max(0.0, min(100.0, (1.0 - remaining) * 100.0))
+
+
+def run_cost_audit(payload: CostAuditRequest) -> CostAuditResponse:
+    score = 100
+    recommendations: list[CostAuditRecommendation] = []
+    red_flags: list[str] = []
+    assumptions: list[str] = []
+    data_gaps_detailed: list[CostAuditDataGap] = []
+    major_flags = 0
+
+    if payload.quantization_applied == "no" and payload.model_precision in {"fp16", "bf16", "unknown"}:
+        score -= 14
+        major_flags += 1
+        recommendations.append(
+            CostAuditRecommendation(
+                recommendation_type="quantization",
+                title="Enable lower-precision inference where quality permits",
+                rationale="Current precision likely leaves throughput on the table; FP8/INT8 can increase throughput materially.",
+                estimated_savings_pct=28.0,
+                priority="high",
+            )
+        )
+    if payload.quantization_applied == "yes":
+        score += 6
+
+    if payload.traffic_pattern == "steady" and payload.gpu_procurement_type == "on_demand":
+        score -= 16
+        major_flags += 1
+        red_flags.append("Steady traffic on on-demand GPUs suggests avoidable reservation waste.")
+        if float(payload.monthly_ai_spend_usd or 0.0) <= 0 and payload.pricing_model != "token_api":
+            _estimated_dedicated_spend, _gpu_count, _gpu_type, _hourly, _pricing_basis = _estimate_dedicated_gpu_monthly_cost(payload)
+            assumptions.append("Dedicated spend baseline estimated from GPU type/count and on-demand hourly priors.")
+        reserved_factor = PROCUREMENT_DISCOUNT_FACTOR["reserved"] / PROCUREMENT_DISCOUNT_FACTOR["on_demand"]
+        procurement_savings_pct = max(0.0, min(100.0, (1.0 - reserved_factor) * 100.0))
+        recommendations.append(
+            CostAuditRecommendation(
+                recommendation_type="procurement",
+                title="Switch steady baseline to reserved capacity",
+                rationale="Steady demand is typically cheaper on reservations; keep burst on spot/on-demand.",
+                estimated_savings_pct=round(procurement_savings_pct, 1),
+                priority="high",
+            )
+        )
+    if payload.traffic_pattern == "steady" and payload.gpu_procurement_type == "reserved":
+        score += 8
+
+    if payload.traffic_pattern in {"batch_offline", "business_hours"} and payload.autoscaling == "no":
+        score -= 12
+        major_flags += 1
+        red_flags.append("No autoscaling for non-steady traffic can create idle spend.")
+        recommendations.append(
+            CostAuditRecommendation(
+                recommendation_type="autoscaling",
+                title="Enable autoscaling / scale-to-zero for non-steady workloads",
+                rationale="Batch and business-hours workloads benefit from reducing idle GPU hours.",
+                estimated_savings_pct=20.0,
+                priority="medium",
+            )
+        )
+    if payload.autoscaling == "yes" and payload.traffic_pattern in {"batch_offline", "bursty", "business_hours"}:
+        score += 6
+
+    if payload.caching_enabled == "no" and payload.modality == "llm":
+        score -= 9
+        recommendations.append(
+            CostAuditRecommendation(
+                recommendation_type="caching",
+                title="Turn on prompt/prefix caching for repeated context",
+                rationale="Repeated prefixes without caching increase avoidable prefill spend.",
+                estimated_savings_pct=12.0,
+                priority="medium",
+            )
+        )
+    if payload.caching_enabled == "yes" and payload.modality == "llm":
+        score += 4
+
+    token_cost_est = _estimate_token_api_monthly_cost(payload)
+    current_spend = float(payload.monthly_ai_spend_usd or token_cost_est or 0.0)
+    if payload.pricing_model == "token_api":
+        if payload.monthly_input_tokens is None:
+            data_gaps_detailed.append(
+                _gap(
+                    "monthly_input_tokens",
+                    "high",
+                    "Without token volume the API-to-dedicated break-even estimate is weak.",
+                )
+            )
+        if payload.monthly_output_tokens is None:
+            data_gaps_detailed.append(
+                _gap(
+                    "monthly_output_tokens",
+                    "high",
+                    "Output volume strongly impacts blended token spend and switch economics.",
+                )
+            )
+
+        total_tokens = float(payload.monthly_input_tokens or 0.0) + float(payload.monthly_output_tokens or 0.0)
+        dedicated_cost, est_gpu_count, est_gpu_type, est_hourly, pricing_basis = _estimate_dedicated_gpu_monthly_cost(payload)
+        denominator = current_spend if current_spend > 0 else float(token_cost_est or 0.0)
+        switch_savings_pct = (
+            max(0.0, min(100.0, ((denominator - dedicated_cost) / denominator) * 100.0))
+            if denominator > 0
+            else 0.0
+        )
+        if total_tokens >= 1_500_000_000:
+            verdict = "consider_switch"
+            reason = (
+                "Token volume is high enough that dedicated/autoscale GPU may reduce inference-unit cost, "
+                "subject to engineering overhead."
+            )
+            recommendations.append(
+                CostAuditRecommendation(
+                    recommendation_type="pricing_model_switch",
+                    title="Evaluate dedicated/autoscale GPU for high token volume",
+                    rationale=(
+                        "Estimated dedicated monthly cost "
+                        f"(${dedicated_cost:,.0f}) using {est_gpu_count}x {est_gpu_type} "
+                        f"@ ${est_hourly:.2f}/hr effective may undercut current API spend "
+                        f"(basis: {pricing_basis})."
+                    ),
+                    estimated_savings_pct=round(switch_savings_pct, 1),
+                    priority="high",
+                )
+            )
+            score -= 12
+            major_flags += 1
+        else:
+            verdict = "appropriate"
+            reason = "Token API is typically appropriate for low-to-mid volume and faster time-to-production."
+    elif payload.pricing_model == "dedicated_gpu":
+        if payload.gpu_type is None:
+            data_gaps_detailed.append(
+                _gap(
+                    "gpu_type",
+                    "high",
+                    "GPU family is required for hardware bottleneck fit and procurement comparisons.",
+                )
+            )
+        if payload.gpu_count is None:
+            data_gaps_detailed.append(
+                _gap(
+                    "gpu_count",
+                    "high",
+                    "Replica count determines dedicated monthly cost and utilization signals.",
+                )
+            )
+        verdict = "appropriate"
+        reason = "Dedicated GPU is appropriate when utilization is sustained and operational ownership is acceptable."
+    else:
+        verdict = "appropriate"
+        reason = "Mixed model can be efficient when baseline and burst traffic are split intentionally."
+
+    if payload.modality in {"image_gen", "video_gen"} and payload.gpu_type and "A10" in payload.gpu_type.upper():
+        red_flags.append("Image/video workload on lower-tier GPU may be compute-constrained.")
+        score -= 8
+        recommendations.append(
+            CostAuditRecommendation(
+                recommendation_type="hardware_match",
+                title="Upgrade compute tier for generation-heavy workloads",
+                rationale="Image/video generation is commonly compute-bound and benefits from higher FLOPS tiers.",
+                estimated_savings_pct=15.0,
+                priority="medium",
+            )
+        )
+
+    if payload.modality in {"embeddings", "llm"} and payload.workload_execution == "throughput_optimized":
+        hw_tier = "multi_gpu" if (payload.gpu_count or 0) > 1 else "single_gpu"
+        hw_family = "H200-class (memory bandwidth)"
+        hw_reason = "Decode/embedding-heavy throughput workloads often benefit from higher memory bandwidth."
+    elif payload.modality in {"image_gen", "video_gen"}:
+        hw_tier = "multi_gpu" if (payload.gpu_count or 0) > 1 else "single_gpu"
+        hw_family = "H100/B200-class (compute)"
+        hw_reason = "Generation-heavy workloads are commonly compute-bound."
+    elif payload.pricing_model == "token_api":
+        hw_tier = "serverless"
+        hw_family = None
+        hw_reason = "Current setup is API-serverless; hardware selection is abstracted by provider."
+    else:
+        hw_tier = "hybrid" if payload.pricing_model == "mixed" else "unknown"
+        hw_family = None
+        hw_reason = "Insufficient workload-specific hardware signals; provide throughput and latency traces."
+
+    if payload.pricing_model == "token_api":
+        assumptions.append("Dedicated GPU break-even is workload-dependent and excludes migration engineering cost.")
+    assumptions.append("Savings are deterministic directional estimates based on request inputs and pricing priors.")
+
+    if payload.monthly_ai_spend_usd is None:
+        data_gaps_detailed.append(
+            _gap(
+                "monthly_ai_spend_usd",
+                "high",
+                "Savings in USD cannot be calibrated without current monthly spend.",
+            )
+        )
+    if payload.avg_input_tokens is None and payload.modality == "llm":
+        data_gaps_detailed.append(
+            _gap(
+                "avg_input_tokens",
+                "high",
+                "Input length drives prefill cost and can change bottleneck/hardware guidance.",
+            )
+        )
+    if payload.traffic_pattern == "unknown":
+        data_gaps_detailed.append(
+            _gap(
+                "traffic_pattern",
+                "medium",
+                "Traffic shape affects procurement and autoscaling recommendations.",
+            )
+        )
+    if payload.peak_concurrency is None:
+        data_gaps_detailed.append(
+            _gap(
+                "peak_concurrency",
+                "medium",
+                "Concurrency helps estimate scaling headroom and autoscaling need.",
+            )
+        )
+
+    if payload.modality == "mixed":
+        data_gaps_detailed.append(
+            _gap(
+                "per_modality_usage_breakdown",
+                "high",
+                "Mixed workloads should be audited per modality leg to avoid masking expensive stages.",
+            )
+        )
+        red_flags.append("Mixed modality should be audited per leg; aggregate-only inputs reduce recommendation precision.")
+
+    if major_flags >= 3:
+        score = min(score, 45)
+    score = max(0, min(100, score))
+
+    recommendations_sorted = sorted(
+        recommendations,
+        key=lambda item: (
+            _priority_rank(item.priority),
+            -item.estimated_savings_pct,
+        ),
+    )[:3]
+
+    top_savings_pcts = [item.estimated_savings_pct for item in recommendations_sorted]
+    combined_savings_pct = min(85.0, _combine_savings_pct(top_savings_pcts)) if top_savings_pcts else 0.0
+    if current_spend > 0:
+        high_savings = min(current_spend, current_spend * (combined_savings_pct / 100.0))
+        low_savings = min(high_savings, high_savings * 0.5)
+    else:
+        low_savings = 0.0
+        high_savings = 0.0
+
+    if recommendations_sorted:
+        top_title = recommendations_sorted[0].title
+        assumptions.append(f"Top lever by modeled impact: {top_title}.")
+
+    gap_field_order: dict[str, int] = {
+        "monthly_ai_spend_usd": 0,
+        "monthly_input_tokens": 1,
+        "monthly_output_tokens": 2,
+        "avg_input_tokens": 3,
+        "gpu_type": 4,
+        "gpu_count": 5,
+        "per_modality_usage_breakdown": 6,
+        "traffic_pattern": 7,
+        "peak_concurrency": 8,
+    }
+    deduped_gaps: dict[str, CostAuditDataGap] = {}
+    for gap in data_gaps_detailed:
+        existing = deduped_gaps.get(gap.field)
+        if existing is None or _impact_rank(gap.impact) < _impact_rank(existing.impact):
+            deduped_gaps[gap.field] = gap
+
+    recommendations_sorted = sorted(
+        recommendations_sorted,
+        key=lambda item: (_priority_rank(item.priority), -item.estimated_savings_pct),
+    )
+    data_gaps_sorted = sorted(
+        deduped_gaps.values(),
+        key=lambda g: (_impact_rank(g.impact), gap_field_order.get(g.field, 999), g.field),
+    )
+
+    return CostAuditResponse(
+        efficiency_score=score,
+        recommendations=recommendations_sorted,
+        hardware_recommendation=CostAuditHardwareRecommendation(
+            tier=hw_tier,
+            gpu_family=hw_family,
+            deployment_shape=payload.pricing_model,
+            reasoning=hw_reason,
+        ),
+        pricing_model_verdict=CostAuditPricingVerdict(
+            current_model=payload.pricing_model,
+            verdict=verdict,
+            reason=reason,
+        ),
+        red_flags=red_flags,
+        estimated_monthly_savings=CostAuditSavingsEstimate(
+            low_usd=round(low_savings, 2),
+            high_usd=round(high_savings, 2),
+            basis=(
+                f"current_spend_usd={current_spend:.2f}; "
+                f"combined_savings_pct={combined_savings_pct:.2f}; "
+                f"top_recommendations={len(recommendations_sorted)}"
+            ),
+        ),
+        assumptions=assumptions,
+        data_gaps=[gap.field for gap in data_gaps_sorted],
+        data_gaps_detailed=data_gaps_sorted,
+    )
+
+
 def _format_money(value: float | None) -> str:
     if value is None:
         return "n/a"
@@ -596,6 +1137,14 @@ def _build_report_narrative(
     sections: list[ReportSection],
     chart_data: dict[str, Any],
 ) -> str:
+    llm_narrative = _build_llm_generated_report_narrative(
+        mode=mode,
+        sections=sections,
+        chart_data=chart_data,
+    )
+    if llm_narrative:
+        return llm_narrative
+
     summary = next((section for section in sections if section.title == "Executive Summary"), None)
     summary_bullet = summary.bullets[0] if summary and summary.bullets else "No summary available."
     if mode == "llm":
@@ -616,6 +1165,54 @@ def _build_report_narrative(
     )
 
 
+def _build_llm_generated_report_narrative(
+    mode: str,
+    sections: list[ReportSection],
+    chart_data: dict[str, Any],
+) -> str | None:
+    # Keep LLM narrative optional and fail-safe.
+    if mode != "llm":
+        return None
+    if not (os.getenv("OPENAI_API_KEY") or os.getenv("ANTHROPIC_API_KEY")):
+        return None
+    try:
+        router = LLMRouter()
+        top_cost_rows = chart_data.get("cost_by_rank", [])
+        top_summary = ""
+        if isinstance(top_cost_rows, list) and top_cost_rows:
+            top = top_cost_rows[0]
+            if isinstance(top, dict):
+                top_summary = (
+                    f"Top plan rank={top.get('rank')}, "
+                    f"provider={top.get('provider_name') or top.get('provider_id')}, "
+                    f"monthly_cost_usd={top.get('monthly_cost_usd')}, "
+                    f"risk={top.get('total_risk')}."
+                )
+        section_lines: list[str] = []
+        for section in sections[:3]:
+            section_lines.append(section.title)
+            for bullet in section.bullets[:3]:
+                section_lines.append(f"- {bullet}")
+        recommendation_summary = (
+            "Report context:\n"
+            + "\n".join(section_lines)
+            + ("\n" + top_summary if top_summary else "")
+            + "\nProvide a concise, action-oriented recommendation narrative."
+        )
+        # Report generation does not yet carry full workload spec, so we pass a conservative default.
+        workload = WorkloadSpec(
+            tokens_per_day=1_000_000.0,
+            pattern="steady",
+            model_key="report_summary",
+            latency_requirement_ms=None,
+        )
+        generated = router.explain(recommendation_summary=recommendation_summary, workload=workload)
+        cleaned = generated.strip()
+        return cleaned or None
+    except Exception:  # noqa: BLE001 - narrative path must never break report generation
+        return None
+
+
 def _risk_band_from_total_risk(total_risk: float | None) -> str:
     if total_risk is None:
         return "unknown"
@@ -624,6 +1221,18 @@ def _risk_band_from_total_risk(total_risk: float | None) -> str:
     if total_risk < 0.6:
         return "medium"
     return "high"
+
+
+def _deployment_mode_from_billing_mode(billing_mode: str | None) -> str:
+    token = (billing_mode or "").strip().lower()
+    if token == "autoscale_hourly":
+        return "autoscale"
+    if token == "dedicated_hourly":
+        return "dedicated"
+    # Serverless/API-style billing families.
+    if token in {"per_token", "per_unit", "per_second", "per_minute", "per_request"}:
+        return "serverless"
+    return "unknown"
 
 
 def _build_scaling_summary_for_llm(response: LLMPlanningResponse) -> ScalingPlanResponse:
@@ -648,15 +1257,7 @@ def _build_scaling_summary_for_llm(response: LLMPlanningResponse) -> ScalingPlan
         else None
     )
 
-    deployment_mode = (
-        "serverless"
-        if top.billing_mode == "per_token"
-        else "autoscale"
-        if top.billing_mode == "autoscale_hourly"
-        else "dedicated"
-        if top.billing_mode == "dedicated_hourly"
-        else "unknown"
-    )
+    deployment_mode = _deployment_mode_from_billing_mode(top.billing_mode)
     capacity_check = (
         "ok"
         if top.utilization_at_peak is not None
@@ -704,15 +1305,7 @@ def _build_scaling_summary_for_catalog(response: CatalogRankingResponse) -> Scal
         )
 
     top = response.offers[0]
-    deployment_mode = (
-        "autoscale"
-        if top.billing_mode == "autoscale_hourly"
-        else "dedicated"
-        if top.billing_mode == "dedicated_hourly"
-        else "serverless"
-        if top.billing_mode == "per_token"
-        else "unknown"
-    )
+    deployment_mode = _deployment_mode_from_billing_mode(top.billing_mode)
     capacity_check = top.capacity_check
     if capacity_check == "insufficient":
         risk_band = "high"

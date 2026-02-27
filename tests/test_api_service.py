@@ -7,6 +7,7 @@ from inference_atlas.api_models import (
     AIAssistContext,
     AIAssistRequest,
     CatalogRankingRequest,
+    CostAuditRequest,
     CopilotTurnRequest,
     LLMPlanningRequest,
     ReportGenerateRequest,
@@ -15,6 +16,7 @@ from inference_atlas.api_models import (
 from inference_atlas.api_service import (
     run_ai_assist,
     run_browse_catalog,
+    run_cost_audit,
     run_copilot_turn,
     run_generate_report,
     run_invoice_analyze,
@@ -457,6 +459,188 @@ def test_run_generate_report_can_include_narrative() -> None:
     assert "Primary recommendation:" in report.narrative
 
 
+def test_run_cost_audit_token_api_returns_structured_response() -> None:
+    response = run_cost_audit(
+        CostAuditRequest(
+            modality="llm",
+            model_name="Llama 3.1 70B",
+            model_precision="fp16",
+            fine_tuned=False,
+            pricing_model="token_api",
+            monthly_input_tokens=1_000_000_000,
+            monthly_output_tokens=300_000_000,
+            traffic_pattern="steady",
+            workload_execution="latency_sensitive",
+            caching_enabled="no",
+            providers=["openai"],
+            autoscaling="yes",
+            quantization_applied="no",
+            monthly_ai_spend_usd=8000,
+        )
+    )
+    assert 0 <= response.efficiency_score <= 100
+    assert len(response.recommendations) >= 1
+    assert response.pricing_model_verdict.current_model == "token_api"
+    assert response.estimated_monthly_savings.high_usd >= response.estimated_monthly_savings.low_usd
+
+
+def test_run_cost_audit_mixed_modality_flags_data_gap() -> None:
+    response = run_cost_audit(
+        CostAuditRequest(
+            modality="mixed",
+            model_name="Mixed pipeline",
+            pricing_model="mixed",
+            traffic_pattern="bursty",
+            workload_execution="mixed",
+            providers=["openai", "deepgram"],
+            multi_model_pipeline=True,
+            pipeline_models=["gpt-4o", "nova-3"],
+        )
+    )
+    assert "per_modality_usage_breakdown" in response.data_gaps
+
+
+def test_run_cost_audit_score_monotonicity_with_major_flags() -> None:
+    optimized = run_cost_audit(
+        CostAuditRequest(
+            modality="llm",
+            model_name="Llama 3.1 70B",
+            model_precision="fp8",
+            pricing_model="dedicated_gpu",
+            gpu_type="H100_80GB",
+            gpu_count=2,
+            gpu_procurement_type="reserved",
+            traffic_pattern="steady",
+            workload_execution="throughput_optimized",
+            caching_enabled="yes",
+            autoscaling="yes",
+            quantization_applied="yes",
+            monthly_ai_spend_usd=8000,
+        )
+    )
+    unoptimized = run_cost_audit(
+        CostAuditRequest(
+            modality="llm",
+            model_name="Llama 3.1 70B",
+            model_precision="fp16",
+            pricing_model="token_api",
+            monthly_input_tokens=4_000_000_000,
+            monthly_output_tokens=1_000_000_000,
+            gpu_procurement_type="on_demand",
+            traffic_pattern="steady",
+            workload_execution="latency_sensitive",
+            caching_enabled="no",
+            autoscaling="no",
+            quantization_applied="no",
+            monthly_ai_spend_usd=8000,
+        )
+    )
+    assert unoptimized.efficiency_score < optimized.efficiency_score
+
+
+def test_run_cost_audit_quantization_invariant() -> None:
+    response = run_cost_audit(
+        CostAuditRequest(
+            modality="llm",
+            model_name="Llama 3.1 70B",
+            model_precision="fp16",
+            pricing_model="token_api",
+            monthly_input_tokens=2_000_000_000,
+            monthly_output_tokens=500_000_000,
+            traffic_pattern="steady",
+            workload_execution="latency_sensitive",
+            caching_enabled="yes",
+            autoscaling="yes",
+            quantization_applied="no",
+            monthly_ai_spend_usd=10000,
+        )
+    )
+    assert any(
+        rec.recommendation_type == "quantization"
+        for rec in response.recommendations
+    )
+
+
+def test_run_cost_audit_savings_anchor_never_exceeds_spend() -> None:
+    request = CostAuditRequest(
+        modality="llm",
+        model_name="Llama 3.1 70B",
+        model_precision="fp16",
+        pricing_model="token_api",
+        monthly_input_tokens=2_500_000_000,
+        monthly_output_tokens=700_000_000,
+        gpu_procurement_type="on_demand",
+        traffic_pattern="steady",
+        workload_execution="latency_sensitive",
+        caching_enabled="no",
+        autoscaling="no",
+        quantization_applied="no",
+        monthly_ai_spend_usd=9000,
+    )
+    response = run_cost_audit(request)
+    assert response.estimated_monthly_savings.high_usd <= float(request.monthly_ai_spend_usd or 0.0)
+
+
+def test_run_cost_audit_uses_provider_gpu_csv_basis_when_available() -> None:
+    response = run_cost_audit(
+        CostAuditRequest(
+            modality="llm",
+            model_name="Llama 3.1 70B",
+            model_precision="fp16",
+            pricing_model="token_api",
+            monthly_input_tokens=3_000_000_000,
+            monthly_output_tokens=900_000_000,
+            traffic_pattern="steady",
+            workload_execution="latency_sensitive",
+            caching_enabled="no",
+            providers=["fireworks"],
+            quantization_applied="no",
+            monthly_ai_spend_usd=12000,
+            gpu_type="A100_80GB",
+        )
+    )
+    switch_rec = next(
+        (
+            rec
+            for rec in response.recommendations
+            if rec.recommendation_type == "pricing_model_switch"
+        ),
+        None,
+    )
+    assert switch_rec is not None
+    assert "basis: provider_csv:fireworks:" in switch_rec.rationale
+
+
+def test_run_cost_audit_falls_back_to_heuristic_basis_when_provider_not_in_gpu_csv() -> None:
+    response = run_cost_audit(
+        CostAuditRequest(
+            modality="llm",
+            model_name="Llama 3.1 70B",
+            model_precision="fp16",
+            pricing_model="token_api",
+            monthly_input_tokens=3_000_000_000,
+            monthly_output_tokens=900_000_000,
+            traffic_pattern="steady",
+            workload_execution="latency_sensitive",
+            caching_enabled="no",
+            providers=["nonexistent_provider_xyz"],
+            quantization_applied="no",
+            monthly_ai_spend_usd=12000,
+            gpu_type="H100_80GB",
+        )
+    )
+    switch_rec = next(
+        (
+            rec
+            for rec in response.recommendations
+            if rec.recommendation_type == "pricing_model_switch"
+        ),
+        None,
+    )
+    assert switch_rec is not None
+    assert "basis: heuristic_prior:H100_80GB" in switch_rec.rationale
+
+
 def test_run_plan_scaling_llm_returns_mode_and_gpu_estimate() -> None:
     llm = run_plan_llm(
         LLMPlanningRequest(
@@ -490,6 +674,41 @@ def test_run_plan_scaling_catalog_returns_capacity_guidance() -> None:
     assert response.mode == "catalog"
     assert response.capacity_check in {"ok", "insufficient", "unknown"}
     assert response.estimated_gpu_count >= 0
+
+
+def test_run_plan_scaling_catalog_maps_per_unit_to_serverless() -> None:
+    response = run_plan_scaling(
+        ScalingPlanRequest(
+            mode="catalog",
+            catalog_ranking={
+                "offers": [
+                    {
+                        "rank": 1,
+                        "provider": "openai",
+                        "sku_name": "whisper-1",
+                        "billing_mode": "per_unit",
+                        "unit_price_usd": 0.006,
+                        "normalized_price": 0.36,
+                        "unit_name": "audio_min",
+                        "confidence": "official",
+                        "monthly_estimate_usd": 10.0,
+                        "required_replicas": 0,
+                        "capacity_check": "unknown",
+                        "previous_unit_price_usd": None,
+                        "price_change_abs_usd": None,
+                        "price_change_pct": None,
+                    }
+                ],
+                "provider_diagnostics": [],
+                "excluded_count": 0,
+                "warnings": [],
+                "relaxation_applied": False,
+                "relaxation_steps": [],
+                "exclusion_breakdown": {},
+            },
+        )
+    )
+    assert response.deployment_mode == "serverless"
 
 
 def test_run_generate_report_includes_scaling_summary_section() -> None:
