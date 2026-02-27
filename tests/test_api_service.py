@@ -482,6 +482,8 @@ def test_run_cost_audit_token_api_returns_structured_response() -> None:
     assert len(response.recommendations) >= 1
     assert response.pricing_model_verdict.current_model == "token_api"
     assert response.estimated_monthly_savings.high_usd >= response.estimated_monthly_savings.low_usd
+    assert response.score_breakdown.base_score == 100
+    assert response.score_breakdown.post_cap_score == response.efficiency_score
 
 
 def test_run_cost_audit_mixed_modality_flags_data_gap() -> None:
@@ -665,6 +667,7 @@ def test_run_cost_audit_caps_score_on_high_savings_consider_switch() -> None:
     combined_pct = float(basis.split("combined_savings_pct=")[1].split(";")[0])
     assert combined_pct > 30.0
     assert response.efficiency_score <= 45
+    assert "high_switch_savings_cap" in response.score_breakdown.caps_applied
 
 
 def test_run_cost_audit_does_not_force_cap_when_savings_not_high() -> None:
@@ -691,6 +694,7 @@ def test_run_cost_audit_does_not_force_cap_when_savings_not_high() -> None:
     combined_pct = float(basis.split("combined_savings_pct=")[1].split(";")[0])
     assert combined_pct <= 30.0
     assert response.efficiency_score > 45
+    assert "high_switch_savings_cap" not in response.score_breakdown.caps_applied
 
 
 def test_run_plan_scaling_llm_returns_mode_and_gpu_estimate() -> None:

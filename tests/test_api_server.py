@@ -77,6 +77,35 @@ def test_plan_llm_endpoint() -> None:
     assert body["plans"][0]["rank"] == 1
 
 
+def test_cost_audit_endpoint() -> None:
+    client = _client()
+    payload = {
+        "modality": "llm",
+        "model_name": "Llama 3.1 70B",
+        "model_precision": "fp16",
+        "fine_tuned": False,
+        "pricing_model": "token_api",
+        "monthly_input_tokens": 500000000,
+        "monthly_output_tokens": 100000000,
+        "traffic_pattern": "steady",
+        "workload_execution": "latency_sensitive",
+        "caching_enabled": "no",
+        "providers": ["openai"],
+        "autoscaling": "yes",
+        "quantization_applied": "no",
+        "monthly_ai_spend_usd": 8000,
+    }
+    response = client.post("/api/v1/audit/cost", json=payload)
+    assert response.status_code == 200
+    body = response.json()
+    assert "efficiency_score" in body
+    assert "recommendations" in body
+    assert "score_breakdown" in body
+    assert body["score_breakdown"]["post_cap_score"] == body["efficiency_score"]
+    assert "hardware_recommendation" in body
+    assert "pricing_model_verdict" in body
+
+
 def test_plan_scaling_endpoint() -> None:
     client = _client()
     payload = {
@@ -112,7 +141,7 @@ def test_plan_scaling_endpoint() -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["mode"] == "catalog"
-    assert body["deployment_mode"] in {"serverless", "dedicated", "autoscale", "unknown"}
+    assert body["deployment_mode"] == "serverless"
     assert body["estimated_gpu_count"] >= 0
 
 

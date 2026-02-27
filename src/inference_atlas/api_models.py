@@ -291,6 +291,146 @@ class ScalingPlanResponse(BaseModel):
     assumptions: list[str] = Field(default_factory=list)
 
 
+class CostAuditRecommendation(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    recommendation_type: Literal[
+        "pricing_model_switch",
+        "procurement",
+        "quantization",
+        "autoscaling",
+        "caching",
+        "hardware_match",
+        "other",
+    ] = "other"
+    title: str
+    rationale: str
+    estimated_savings_pct: float = Field(ge=0, le=100)
+    priority: Literal["high", "medium", "low"] = "medium"
+
+
+class CostAuditHardwareRecommendation(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    tier: Literal["serverless", "single_gpu", "multi_gpu", "hybrid", "unknown"] = "unknown"
+    gpu_family: Optional[str] = None
+    deployment_shape: str = "unknown"
+    reasoning: str
+
+
+class CostAuditPricingVerdict(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    current_model: Literal["token_api", "dedicated_gpu", "mixed"]
+    verdict: Literal["appropriate", "consider_switch", "suboptimal", "unknown"] = "unknown"
+    reason: str
+
+
+class CostAuditSavingsEstimate(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    low_usd: float = Field(ge=0)
+    high_usd: float = Field(ge=0)
+    basis: str
+
+
+class CostAuditScoreBreakdown(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    base_score: int = Field(ge=0, le=100, default=100)
+    penalty_points: int = Field(ge=0, default=0)
+    bonus_points: int = Field(ge=0, default=0)
+    pre_cap_score: int = Field(ge=0, le=100)
+    post_cap_score: int = Field(ge=0, le=100)
+    major_flags: int = Field(ge=0, default=0)
+    caps_applied: list[str] = Field(default_factory=list)
+    combined_savings_pct: float = Field(ge=0, le=100, default=0.0)
+
+
+class CostAuditDataGap(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    field: str
+    impact: Literal["high", "medium", "low"]
+    why_it_matters: str
+
+
+class CostAuditRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore", protected_namespaces=())
+
+    modality: Literal[
+        "llm",
+        "asr",
+        "tts",
+        "embeddings",
+        "image_gen",
+        "video_gen",
+        "mixed",
+    ]
+    model_name: str = Field(min_length=1)
+    model_precision: Literal["fp16", "bf16", "fp8", "int8", "int4", "unknown"] = "unknown"
+    fine_tuned: bool = False
+
+    pricing_model: Literal["token_api", "dedicated_gpu", "mixed"]
+    monthly_input_tokens: Optional[float] = Field(default=None, ge=0)
+    monthly_output_tokens: Optional[float] = Field(default=None, ge=0)
+    gpu_type: Optional[str] = None
+    gpu_count: Optional[int] = Field(default=None, ge=0)
+    gpu_procurement_type: Literal["on_demand", "reserved", "spot", "mixed", "unknown"] = "unknown"
+    traffic_pattern: Literal["steady", "bursty", "business_hours", "batch_offline", "unknown"] = "unknown"
+    peak_concurrency: Optional[int] = Field(default=None, ge=0)
+
+    avg_input_tokens: Optional[float] = Field(default=None, ge=0)
+    avg_output_tokens: Optional[float] = Field(default=None, ge=0)
+    workload_execution: Literal[
+        "latency_sensitive",
+        "throughput_optimized",
+        "mixed",
+        "unknown",
+    ] = "unknown"
+    caching_enabled: Literal["yes", "no", "unknown"] = "unknown"
+
+    providers: list[str] = Field(default_factory=list)
+    autoscaling: Literal["yes", "no", "unknown"] = "unknown"
+    quantization_applied: Literal["yes", "no", "unknown"] = "unknown"
+    multi_model_pipeline: bool = False
+    pipeline_models: list[str] = Field(default_factory=list)
+
+    use_case: Optional[str] = None
+    business_context: Literal["consumer", "b2b", "internal_tooling", "unknown"] = "unknown"
+    latency_sla: Optional[str] = None
+    monthly_ai_spend_usd: Optional[float] = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def validate_payload(self) -> "CostAuditRequest":
+        if self.pricing_model == "token_api":
+            if self.monthly_input_tokens is None and self.monthly_output_tokens is None:
+                raise ValueError(
+                    "token_api audits require monthly_input_tokens and/or monthly_output_tokens"
+                )
+        if self.pricing_model == "dedicated_gpu":
+            if self.gpu_count is None or self.gpu_count <= 0:
+                raise ValueError("dedicated_gpu audits require gpu_count > 0")
+        if not self.multi_model_pipeline and self.pipeline_models:
+            raise ValueError("pipeline_models should be empty when multi_model_pipeline is false")
+        return self
+
+
+class CostAuditResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    efficiency_score: int = Field(ge=0, le=100)
+    recommendations: list[CostAuditRecommendation] = Field(default_factory=list)
+    hardware_recommendation: CostAuditHardwareRecommendation
+    pricing_model_verdict: CostAuditPricingVerdict
+    red_flags: list[str] = Field(default_factory=list)
+    estimated_monthly_savings: CostAuditSavingsEstimate
+    score_breakdown: CostAuditScoreBreakdown
+    assumptions: list[str] = Field(default_factory=list)
+    data_gaps: list[str] = Field(default_factory=list)
+    data_gaps_detailed: list[CostAuditDataGap] = Field(default_factory=list)
+
+
 class ReportGenerateResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
 

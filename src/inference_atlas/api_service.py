@@ -27,6 +27,7 @@ from inference_atlas.api_models import (
     CostAuditRecommendation,
     CostAuditRequest,
     CostAuditResponse,
+    CostAuditScoreBreakdown,
     CostAuditSavingsEstimate,
     CopilotTurnRequest,
     CopilotTurnResponse,
@@ -640,7 +641,11 @@ def _combine_savings_pct(pcts: list[float]) -> float:
 
 
 def run_cost_audit(payload: CostAuditRequest) -> CostAuditResponse:
-    score = 100
+    base_score = 100
+    score = base_score
+    penalty_points = 0
+    bonus_points = 0
+    caps_applied: list[str] = []
     recommendations: list[CostAuditRecommendation] = []
     red_flags: list[str] = []
     assumptions: list[str] = []
@@ -648,6 +653,7 @@ def run_cost_audit(payload: CostAuditRequest) -> CostAuditResponse:
     major_flags = 0
 
     if payload.quantization_applied == "no" and payload.model_precision in {"fp16", "bf16", "unknown"}:
+        penalty_points += 14
         score -= 14
         major_flags += 1
         recommendations.append(
@@ -660,9 +666,11 @@ def run_cost_audit(payload: CostAuditRequest) -> CostAuditResponse:
             )
         )
     if payload.quantization_applied == "yes":
+        bonus_points += 6
         score += 6
 
     if payload.traffic_pattern == "steady" and payload.gpu_procurement_type == "on_demand":
+        penalty_points += 16
         score -= 16
         major_flags += 1
         red_flags.append("Steady traffic on on-demand GPUs suggests avoidable reservation waste.")
@@ -681,9 +689,11 @@ def run_cost_audit(payload: CostAuditRequest) -> CostAuditResponse:
             )
         )
     if payload.traffic_pattern == "steady" and payload.gpu_procurement_type == "reserved":
+        bonus_points += 8
         score += 8
 
     if payload.traffic_pattern in {"batch_offline", "business_hours"} and payload.autoscaling == "no":
+        penalty_points += 12
         score -= 12
         major_flags += 1
         red_flags.append("No autoscaling for non-steady traffic can create idle spend.")
@@ -697,9 +707,11 @@ def run_cost_audit(payload: CostAuditRequest) -> CostAuditResponse:
             )
         )
     if payload.autoscaling == "yes" and payload.traffic_pattern in {"batch_offline", "bursty", "business_hours"}:
+        bonus_points += 6
         score += 6
 
     if payload.caching_enabled == "no" and payload.modality == "llm":
+        penalty_points += 9
         score -= 9
         recommendations.append(
             CostAuditRecommendation(
@@ -711,6 +723,7 @@ def run_cost_audit(payload: CostAuditRequest) -> CostAuditResponse:
             )
         )
     if payload.caching_enabled == "yes" and payload.modality == "llm":
+        bonus_points += 4
         score += 4
 
     token_cost_est = _estimate_token_api_monthly_cost(payload)
@@ -761,6 +774,7 @@ def run_cost_audit(payload: CostAuditRequest) -> CostAuditResponse:
                     priority="high",
                 )
             )
+            penalty_points += 12
             score -= 12
             major_flags += 1
         else:
@@ -791,6 +805,7 @@ def run_cost_audit(payload: CostAuditRequest) -> CostAuditResponse:
 
     if payload.modality in {"image_gen", "video_gen"} and payload.gpu_type and "A10" in payload.gpu_type.upper():
         red_flags.append("Image/video workload on lower-tier GPU may be compute-constrained.")
+        penalty_points += 8
         score -= 8
         recommendations.append(
             CostAuditRecommendation(
@@ -867,9 +882,11 @@ def run_cost_audit(payload: CostAuditRequest) -> CostAuditResponse:
         red_flags.append("Mixed modality should be audited per leg; aggregate-only inputs reduce recommendation precision.")
 
     if major_flags >= 3:
+        caps_applied.append("major_flags_cap")
         score = min(score, 45)
 
     score = max(0, min(100, score))
+    pre_cap_score = score
 
     recommendations_sorted = sorted(
         recommendations,
@@ -883,8 +900,10 @@ def run_cost_audit(payload: CostAuditRequest) -> CostAuditResponse:
     combined_savings_pct = min(85.0, _combine_savings_pct(top_savings_pcts)) if top_savings_pcts else 0.0
     # Align score with strong model-switch economics to avoid conflicting signals.
     if verdict == "consider_switch" and combined_savings_pct > 30.0:
+        caps_applied.append("high_switch_savings_cap")
         score = min(score, 45)
     score = max(0, min(100, score))
+    post_cap_score = score
 
     if current_spend > 0:
         high_savings = min(current_spend, current_spend * (combined_savings_pct / 100.0))
@@ -946,6 +965,16 @@ def run_cost_audit(payload: CostAuditRequest) -> CostAuditResponse:
                 f"combined_savings_pct={combined_savings_pct:.2f}; "
                 f"top_recommendations={len(recommendations_sorted)}"
             ),
+        ),
+        score_breakdown=CostAuditScoreBreakdown(
+            base_score=base_score,
+            penalty_points=penalty_points,
+            bonus_points=bonus_points,
+            pre_cap_score=pre_cap_score,
+            post_cap_score=post_cap_score,
+            major_flags=major_flags,
+            caps_applied=caps_applied,
+            combined_savings_pct=round(combined_savings_pct, 2),
         ),
         assumptions=assumptions,
         data_gaps=[gap.field for gap in data_gaps_sorted],
