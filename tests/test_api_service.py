@@ -482,6 +482,8 @@ def test_run_cost_audit_token_api_returns_structured_response() -> None:
     assert len(response.recommendations) >= 1
     assert response.pricing_model_verdict.current_model == "token_api"
     assert response.estimated_monthly_savings.high_usd >= response.estimated_monthly_savings.low_usd
+    assert response.score_breakdown.base_score == 100
+    assert response.score_breakdown.post_cap_score == response.efficiency_score
 
 
 def test_run_cost_audit_mixed_modality_flags_data_gap() -> None:
@@ -497,7 +499,24 @@ def test_run_cost_audit_mixed_modality_flags_data_gap() -> None:
             pipeline_models=["gpt-4o", "nova-3"],
         )
     )
+    assert len(response.per_modality_audits) >= 1
+    assert "per_modality_usage_breakdown" not in response.data_gaps
+
+
+def test_run_cost_audit_mixed_without_pipeline_keeps_data_gap() -> None:
+    response = run_cost_audit(
+        CostAuditRequest(
+            modality="mixed",
+            model_name="Mixed pipeline",
+            pricing_model="mixed",
+            traffic_pattern="bursty",
+            workload_execution="mixed",
+            providers=["openai", "deepgram"],
+            multi_model_pipeline=False,
+        )
+    )
     assert "per_modality_usage_breakdown" in response.data_gaps
+    assert response.per_modality_audits == []
 
 
 def test_run_cost_audit_score_monotonicity_with_major_flags() -> None:
@@ -609,6 +628,9 @@ def test_run_cost_audit_uses_provider_gpu_csv_basis_when_available() -> None:
     )
     assert switch_rec is not None
     assert "basis: provider_csv:fireworks:" in switch_rec.rationale
+    assert response.pricing_source == "provider_csv"
+    assert response.pricing_source_provider == "fireworks"
+    assert response.pricing_source_gpu == "A100_80GB"
 
 
 def test_run_cost_audit_falls_back_to_heuristic_basis_when_provider_not_in_gpu_csv() -> None:
@@ -639,6 +661,63 @@ def test_run_cost_audit_falls_back_to_heuristic_basis_when_provider_not_in_gpu_c
     )
     assert switch_rec is not None
     assert "basis: heuristic_prior:H100_80GB" in switch_rec.rationale
+    assert response.pricing_source == "heuristic_prior"
+    assert response.pricing_source_provider is None
+    assert response.pricing_source_gpu == "H100_80GB"
+
+
+def test_run_cost_audit_caps_score_on_high_savings_consider_switch() -> None:
+    response = run_cost_audit(
+        CostAuditRequest(
+            modality="llm",
+            model_name="Llama 3.1 70B",
+            model_precision="fp16",
+            pricing_model="token_api",
+            monthly_input_tokens=3_500_000_000,
+            monthly_output_tokens=1_000_000_000,
+            traffic_pattern="steady",
+            workload_execution="latency_sensitive",
+            caching_enabled="yes",
+            providers=["fireworks"],
+            quantization_applied="yes",
+            monthly_ai_spend_usd=20000,
+            gpu_type="A100_80GB",
+        )
+    )
+    assert response.pricing_model_verdict.verdict == "consider_switch"
+    basis = response.estimated_monthly_savings.basis
+    assert "combined_savings_pct=" in basis
+    combined_pct = float(basis.split("combined_savings_pct=")[1].split(";")[0])
+    assert combined_pct > 30.0
+    assert response.efficiency_score <= 45
+    assert "high_switch_savings_cap" in response.score_breakdown.caps_applied
+
+
+def test_run_cost_audit_does_not_force_cap_when_savings_not_high() -> None:
+    response = run_cost_audit(
+        CostAuditRequest(
+            modality="llm",
+            model_name="Llama 3.1 70B",
+            model_precision="fp16",
+            pricing_model="token_api",
+            monthly_input_tokens=2_000_000_000,
+            monthly_output_tokens=600_000_000,
+            traffic_pattern="steady",
+            workload_execution="latency_sensitive",
+            caching_enabled="yes",
+            providers=["fireworks"],
+            quantization_applied="yes",
+            monthly_ai_spend_usd=7000,
+            gpu_type="H200",
+        )
+    )
+    assert response.pricing_model_verdict.verdict == "consider_switch"
+    basis = response.estimated_monthly_savings.basis
+    assert "combined_savings_pct=" in basis
+    combined_pct = float(basis.split("combined_savings_pct=")[1].split(";")[0])
+    assert combined_pct <= 30.0
+    assert response.efficiency_score > 45
+    assert "high_switch_savings_cap" not in response.score_breakdown.caps_applied
 
 
 def test_run_plan_scaling_llm_returns_mode_and_gpu_estimate() -> None:

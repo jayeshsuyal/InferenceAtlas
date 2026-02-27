@@ -22,11 +22,13 @@ from inference_atlas.api_models import (
     CatalogRankingRequest,
     CatalogRankingResponse,
     CostAuditDataGap,
+    CostAuditLegAudit,
     CostAuditHardwareRecommendation,
     CostAuditPricingVerdict,
     CostAuditRecommendation,
     CostAuditRequest,
     CostAuditResponse,
+    CostAuditScoreBreakdown,
     CostAuditSavingsEstimate,
     CopilotTurnRequest,
     CopilotTurnResponse,
@@ -578,7 +580,9 @@ def _resolve_gpu_hourly_from_csv(
     )
 
 
-def _estimate_dedicated_gpu_monthly_cost(payload: CostAuditRequest) -> tuple[float, int, str, float, str]:
+def _estimate_dedicated_gpu_monthly_cost(
+    payload: CostAuditRequest,
+) -> tuple[float, int, str, float, str, str, str | None, str]:
     total_tokens = float(payload.monthly_input_tokens or 0.0) + float(payload.monthly_output_tokens or 0.0)
     if payload.gpu_count is not None and payload.gpu_count > 0:
         gpu_count = int(payload.gpu_count)
@@ -601,10 +605,14 @@ def _estimate_dedicated_gpu_monthly_cost(payload: CostAuditRequest) -> tuple[flo
         hourly = fallback_hourly
         gpu_type = requested_gpu_type
         pricing_basis = f"heuristic_prior:{gpu_type}"
+        pricing_source = "heuristic_prior"
+        pricing_source_provider = None
     else:
         hourly = csv_hourly
         gpu_type = csv_gpu_type or requested_gpu_type
         provider_label = csv_provider or "catalog"
+        pricing_source = "provider_csv"
+        pricing_source_provider = provider_label
         if csv_source_url:
             pricing_basis = f"provider_csv:{provider_label}:{csv_source_url}"
         else:
@@ -615,7 +623,16 @@ def _estimate_dedicated_gpu_monthly_cost(payload: CostAuditRequest) -> tuple[flo
     factor = PROCUREMENT_DISCOUNT_FACTOR.get(procurement, 1.0)
     effective_hourly = hourly * factor
     monthly = gpu_count * effective_hourly * 730.0
-    return monthly, gpu_count, gpu_type, effective_hourly, pricing_basis
+    return (
+        monthly,
+        gpu_count,
+        gpu_type,
+        effective_hourly,
+        pricing_basis,
+        pricing_source,
+        pricing_source_provider,
+        gpu_type,
+    )
 
 
 def _gap(field: str, impact: str, why: str) -> CostAuditDataGap:
@@ -639,15 +656,67 @@ def _combine_savings_pct(pcts: list[float]) -> float:
     return max(0.0, min(100.0, (1.0 - remaining) * 100.0))
 
 
-def run_cost_audit(payload: CostAuditRequest) -> CostAuditResponse:
-    score = 100
+def _infer_modality_for_model(model_name: str) -> str:
+    token = model_name.strip().lower()
+    if any(k in token for k in ("whisper", "stt", "asr", "transcribe", "nova")):
+        return "asr"
+    if any(k in token for k in ("tts", "voice", "speech", "eleven")):
+        return "tts"
+    if "embed" in token:
+        return "embeddings"
+    if any(k in token for k in ("image", "flux", "dall", "sdxl", "imagen")):
+        return "image_gen"
+    if any(k in token for k in ("video", "veo", "sora", "wan")):
+        return "video_gen"
+    return "llm"
+
+
+def _build_mixed_leg_payloads(payload: CostAuditRequest) -> list[CostAuditRequest]:
+    model_names = [m.strip() for m in payload.pipeline_models if m.strip()]
+    if not model_names:
+        return []
+    leg_count = len(model_names)
+    spend_total = float(payload.monthly_ai_spend_usd or 0.0)
+    spend_per_leg = (spend_total / leg_count) if leg_count > 0 and spend_total > 0 else None
+    in_total = float(payload.monthly_input_tokens or 0.0)
+    out_total = float(payload.monthly_output_tokens or 0.0)
+    in_per_leg = (in_total / leg_count) if leg_count > 0 and in_total > 0 else None
+    out_per_leg = (out_total / leg_count) if leg_count > 0 and out_total > 0 else None
+
+    legs: list[CostAuditRequest] = []
+    for model in model_names:
+        leg = payload.model_copy(
+            update={
+                "modality": _infer_modality_for_model(model),
+                "model_name": model,
+                "multi_model_pipeline": False,
+                "pipeline_models": [],
+                "monthly_ai_spend_usd": spend_per_leg,
+                "monthly_input_tokens": in_per_leg,
+                "monthly_output_tokens": out_per_leg,
+            }
+        )
+        legs.append(leg)
+    return legs
+
+
+def run_cost_audit(payload: CostAuditRequest, _allow_mixed_split: bool = True) -> CostAuditResponse:
+    base_score = 100
+    score = base_score
+    penalty_points = 0
+    bonus_points = 0
+    caps_applied: list[str] = []
     recommendations: list[CostAuditRecommendation] = []
     red_flags: list[str] = []
     assumptions: list[str] = []
     data_gaps_detailed: list[CostAuditDataGap] = []
     major_flags = 0
+    pricing_source: str = "unknown"
+    pricing_source_provider: str | None = None
+    pricing_source_gpu: str | None = None
 
     if payload.quantization_applied == "no" and payload.model_precision in {"fp16", "bf16", "unknown"}:
+        penalty_points += 14
         score -= 14
         major_flags += 1
         recommendations.append(
@@ -660,14 +729,25 @@ def run_cost_audit(payload: CostAuditRequest) -> CostAuditResponse:
             )
         )
     if payload.quantization_applied == "yes":
+        bonus_points += 6
         score += 6
 
     if payload.traffic_pattern == "steady" and payload.gpu_procurement_type == "on_demand":
+        penalty_points += 16
         score -= 16
         major_flags += 1
         red_flags.append("Steady traffic on on-demand GPUs suggests avoidable reservation waste.")
         if float(payload.monthly_ai_spend_usd or 0.0) <= 0 and payload.pricing_model != "token_api":
-            _estimated_dedicated_spend, _gpu_count, _gpu_type, _hourly, _pricing_basis = _estimate_dedicated_gpu_monthly_cost(payload)
+            (
+                _estimated_dedicated_spend,
+                _gpu_count,
+                _gpu_type,
+                _hourly,
+                _pricing_basis,
+                _pricing_source,
+                _pricing_source_provider,
+                _pricing_source_gpu,
+            ) = _estimate_dedicated_gpu_monthly_cost(payload)
             assumptions.append("Dedicated spend baseline estimated from GPU type/count and on-demand hourly priors.")
         reserved_factor = PROCUREMENT_DISCOUNT_FACTOR["reserved"] / PROCUREMENT_DISCOUNT_FACTOR["on_demand"]
         procurement_savings_pct = max(0.0, min(100.0, (1.0 - reserved_factor) * 100.0))
@@ -681,9 +761,11 @@ def run_cost_audit(payload: CostAuditRequest) -> CostAuditResponse:
             )
         )
     if payload.traffic_pattern == "steady" and payload.gpu_procurement_type == "reserved":
+        bonus_points += 8
         score += 8
 
     if payload.traffic_pattern in {"batch_offline", "business_hours"} and payload.autoscaling == "no":
+        penalty_points += 12
         score -= 12
         major_flags += 1
         red_flags.append("No autoscaling for non-steady traffic can create idle spend.")
@@ -697,9 +779,11 @@ def run_cost_audit(payload: CostAuditRequest) -> CostAuditResponse:
             )
         )
     if payload.autoscaling == "yes" and payload.traffic_pattern in {"batch_offline", "bursty", "business_hours"}:
+        bonus_points += 6
         score += 6
 
     if payload.caching_enabled == "no" and payload.modality == "llm":
+        penalty_points += 9
         score -= 9
         recommendations.append(
             CostAuditRecommendation(
@@ -711,6 +795,7 @@ def run_cost_audit(payload: CostAuditRequest) -> CostAuditResponse:
             )
         )
     if payload.caching_enabled == "yes" and payload.modality == "llm":
+        bonus_points += 4
         score += 4
 
     token_cost_est = _estimate_token_api_monthly_cost(payload)
@@ -734,7 +819,16 @@ def run_cost_audit(payload: CostAuditRequest) -> CostAuditResponse:
             )
 
         total_tokens = float(payload.monthly_input_tokens or 0.0) + float(payload.monthly_output_tokens or 0.0)
-        dedicated_cost, est_gpu_count, est_gpu_type, est_hourly, pricing_basis = _estimate_dedicated_gpu_monthly_cost(payload)
+        (
+            dedicated_cost,
+            est_gpu_count,
+            est_gpu_type,
+            est_hourly,
+            pricing_basis,
+            pricing_source,
+            pricing_source_provider,
+            pricing_source_gpu,
+        ) = _estimate_dedicated_gpu_monthly_cost(payload)
         denominator = current_spend if current_spend > 0 else float(token_cost_est or 0.0)
         switch_savings_pct = (
             max(0.0, min(100.0, ((denominator - dedicated_cost) / denominator) * 100.0))
@@ -761,12 +855,23 @@ def run_cost_audit(payload: CostAuditRequest) -> CostAuditResponse:
                     priority="high",
                 )
             )
+            penalty_points += 12
             score -= 12
             major_flags += 1
         else:
             verdict = "appropriate"
             reason = "Token API is typically appropriate for low-to-mid volume and faster time-to-production."
     elif payload.pricing_model == "dedicated_gpu":
+        (
+            _dedicated_cost,
+            _est_gpu_count,
+            _est_gpu_type,
+            _est_hourly,
+            _pricing_basis,
+            pricing_source,
+            pricing_source_provider,
+            pricing_source_gpu,
+        ) = _estimate_dedicated_gpu_monthly_cost(payload)
         if payload.gpu_type is None:
             data_gaps_detailed.append(
                 _gap(
@@ -791,6 +896,7 @@ def run_cost_audit(payload: CostAuditRequest) -> CostAuditResponse:
 
     if payload.modality in {"image_gen", "video_gen"} and payload.gpu_type and "A10" in payload.gpu_type.upper():
         red_flags.append("Image/video workload on lower-tier GPU may be compute-constrained.")
+        penalty_points += 8
         score -= 8
         recommendations.append(
             CostAuditRecommendation(
@@ -867,8 +973,11 @@ def run_cost_audit(payload: CostAuditRequest) -> CostAuditResponse:
         red_flags.append("Mixed modality should be audited per leg; aggregate-only inputs reduce recommendation precision.")
 
     if major_flags >= 3:
+        caps_applied.append("major_flags_cap")
         score = min(score, 45)
+
     score = max(0, min(100, score))
+    pre_cap_score = score
 
     recommendations_sorted = sorted(
         recommendations,
@@ -880,6 +989,13 @@ def run_cost_audit(payload: CostAuditRequest) -> CostAuditResponse:
 
     top_savings_pcts = [item.estimated_savings_pct for item in recommendations_sorted]
     combined_savings_pct = min(85.0, _combine_savings_pct(top_savings_pcts)) if top_savings_pcts else 0.0
+    # Align score with strong model-switch economics to avoid conflicting signals.
+    if verdict == "consider_switch" and combined_savings_pct > 30.0:
+        caps_applied.append("high_switch_savings_cap")
+        score = min(score, 45)
+    score = max(0, min(100, score))
+    post_cap_score = score
+
     if current_spend > 0:
         high_savings = min(current_spend, current_spend * (combined_savings_pct / 100.0))
         low_savings = min(high_savings, high_savings * 0.5)
@@ -917,6 +1033,45 @@ def run_cost_audit(payload: CostAuditRequest) -> CostAuditResponse:
         key=lambda g: (_impact_rank(g.impact), gap_field_order.get(g.field, 999), g.field),
     )
 
+    per_modality_audits: list[CostAuditLegAudit] = []
+    if payload.modality == "mixed" and _allow_mixed_split:
+        leg_payloads = _build_mixed_leg_payloads(payload)
+        if leg_payloads:
+            leg_responses = [run_cost_audit(leg, _allow_mixed_split=False) for leg in leg_payloads]
+            for leg_payload, leg_response in zip(leg_payloads, leg_responses):
+                per_modality_audits.append(
+                    CostAuditLegAudit(
+                        modality=leg_payload.modality,
+                        model_name=leg_payload.model_name,
+                        estimated_spend_usd=float(leg_payload.monthly_ai_spend_usd or 0.0),
+                        efficiency_score=leg_response.efficiency_score,
+                        top_recommendation=(
+                            leg_response.recommendations[0].title if leg_response.recommendations else None
+                        ),
+                        estimated_savings_high_usd=leg_response.estimated_monthly_savings.high_usd,
+                    )
+                )
+            total_leg_spend = sum(leg.estimated_spend_usd for leg in per_modality_audits)
+            if total_leg_spend > 0:
+                weighted_score = sum(
+                    leg.efficiency_score * leg.estimated_spend_usd for leg in per_modality_audits
+                ) / total_leg_spend
+            else:
+                weighted_score = sum(leg.efficiency_score for leg in per_modality_audits) / len(per_modality_audits)
+            score = max(0, min(100, int(round(weighted_score))))
+            pre_cap_score = score
+            post_cap_score = score
+            summed_high = sum(leg.estimated_savings_high_usd for leg in per_modality_audits)
+            if current_spend > 0:
+                high_savings = min(current_spend, summed_high)
+                low_savings = min(high_savings, high_savings * 0.5)
+            else:
+                high_savings = summed_high
+                low_savings = max(0.0, summed_high * 0.5)
+            # This gap is resolved when per-leg mini-audits are available.
+            data_gaps_sorted = [g for g in data_gaps_sorted if g.field != "per_modality_usage_breakdown"]
+            assumptions.append("Mixed workload score/savings aggregated from per-leg mini-audits.")
+
     return CostAuditResponse(
         efficiency_score=score,
         recommendations=recommendations_sorted,
@@ -931,6 +1086,9 @@ def run_cost_audit(payload: CostAuditRequest) -> CostAuditResponse:
             verdict=verdict,
             reason=reason,
         ),
+        pricing_source=pricing_source,
+        pricing_source_provider=pricing_source_provider,
+        pricing_source_gpu=pricing_source_gpu,
         red_flags=red_flags,
         estimated_monthly_savings=CostAuditSavingsEstimate(
             low_usd=round(low_savings, 2),
@@ -941,6 +1099,17 @@ def run_cost_audit(payload: CostAuditRequest) -> CostAuditResponse:
                 f"top_recommendations={len(recommendations_sorted)}"
             ),
         ),
+        score_breakdown=CostAuditScoreBreakdown(
+            base_score=base_score,
+            penalty_points=penalty_points,
+            bonus_points=bonus_points,
+            pre_cap_score=pre_cap_score,
+            post_cap_score=post_cap_score,
+            major_flags=major_flags,
+            caps_applied=caps_applied,
+            combined_savings_pct=round(combined_savings_pct, 2),
+        ),
+        per_modality_audits=per_modality_audits,
         assumptions=assumptions,
         data_gaps=[gap.field for gap in data_gaps_sorted],
         data_gaps_detailed=data_gaps_sorted,
