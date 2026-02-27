@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { ArrowLeft, Download, Loader2, Sparkles, SlidersHorizontal, X } from 'lucide-react'
 import { useAIContext } from '@/context/AIContext'
 import { WorkloadSelector } from '@/components/WorkloadSelector'
@@ -7,8 +7,9 @@ import { NonLLMForm } from '@/components/optimize/NonLLMForm'
 import { CopilotPanel } from '@/components/optimize/CopilotPanel'
 import { ResultsTable } from '@/components/optimize/ResultsTable'
 import { ReportCharts } from '@/components/optimize/ReportCharts'
+import { ScalingSummaryCard } from '@/components/optimize/ScalingSummaryCard'
 import { SkeletonCard } from '@/components/ui/skeleton'
-import { downloadReport, generateReport, planLLMWorkload, rankCatalogOffers } from '@/services/api'
+import { downloadReport, generateReport, planLLMWorkload, planScaling, rankCatalogOffers } from '@/services/api'
 import type { LLMFormValues, NonLLMFormValues } from '@/schemas/forms'
 import type {
   LLMPlanningResponse,
@@ -16,6 +17,7 @@ import type {
   CopilotApplyPayload,
   ReportGenerateRequest,
   ReportGenerateResponse,
+  ScalingPlanResponse,
 } from '@/services/types'
 import type { WorkloadTypeId } from '@/lib/constants'
 import { WORKLOAD_TYPES } from '@/lib/constants'
@@ -35,8 +37,13 @@ export function OptimizePage() {
   const [reportLoading, setReportLoading] = useState(false)
   const [reportError, setReportError] = useState<string | null>(null)
   const [reportData, setReportData] = useState<ReportGenerateResponse | null>(null)
+  const [scalingData, setScalingData] = useState<ScalingPlanResponse | null>(null)
+  const [scalingLoading, setScalingLoading] = useState(false)
+  const [scalingError, setScalingError] = useState<string | null>(null)
   const [downloadSuccess, setDownloadSuccess] = useState(false)
   const [reportFormat, setReportFormat] = useState<'markdown' | 'html' | 'pdf'>('markdown')
+  // Incremented on every new optimize run; callbacks check equality to drop stale responses
+  const scalingRunRef = useRef(0)
   const { setAIContext } = useAIContext()
 
   function handleWorkloadSelect(id: WorkloadTypeId) {
@@ -50,6 +57,9 @@ export function OptimizePage() {
     setReportError(null)
     setReportData(null)
     setDownloadSuccess(false)
+    setScalingData(null)
+    setScalingLoading(false)
+    setScalingError(null)
     setAIContext({ workload_type: id, providers: [] })
   }
 
@@ -70,12 +80,18 @@ export function OptimizePage() {
     setReportData(null)
     setDownloadSuccess(false)
     setReportFormat('markdown')
+    setScalingData(null)
+    setScalingLoading(false)
+    setScalingError(null)
     setAIContext({ workload_type: null, providers: [] })
   }
 
   async function handleLLMSubmit(values: LLMFormValues) {
     setLoading(true)
     setError(null)
+    setScalingData(null)
+    setScalingLoading(true)
+    setScalingError(null)
     try {
       const res = await planLLMWorkload({
         tokens_per_day: values.tokens_per_day,
@@ -97,8 +113,15 @@ export function OptimizePage() {
         workload_type: workload,
         providers: [...new Set(res.plans.map((p) => p.provider_id))],
       })
+      // Non-blocking — scaling card appears when ready; run counter drops stale responses
+      const thisRun = ++scalingRunRef.current
+      void planScaling({ mode: 'llm', llm_planning: res })
+        .then((s) => { if (scalingRunRef.current === thisRun) { setScalingData(s); setScalingError(null) } })
+        .catch((e) => { if (scalingRunRef.current === thisRun) setScalingError(e instanceof Error ? e.message : 'Scaling estimate unavailable') })
+        .finally(() => { if (scalingRunRef.current === thisRun) setScalingLoading(false) })
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Planning failed')
+      setScalingLoading(false)
     } finally {
       setLoading(false)
     }
@@ -107,6 +130,9 @@ export function OptimizePage() {
   async function handleNonLLMSubmit(values: NonLLMFormValues) {
     setLoading(true)
     setError(null)
+    setScalingData(null)
+    setScalingLoading(true)
+    setScalingError(null)
     try {
       const res = await rankCatalogOffers({
         workload_type: values.workload_type,
@@ -129,8 +155,14 @@ export function OptimizePage() {
         workload_type: workload,
         providers: [...new Set(res.offers.map((o) => o.provider))],
       })
+      const thisRun = ++scalingRunRef.current
+      void planScaling({ mode: 'catalog', catalog_ranking: res })
+        .then((s) => { if (scalingRunRef.current === thisRun) { setScalingData(s); setScalingError(null) } })
+        .catch((e) => { if (scalingRunRef.current === thisRun) setScalingError(e instanceof Error ? e.message : 'Scaling estimate unavailable') })
+        .finally(() => { if (scalingRunRef.current === thisRun) setScalingLoading(false) })
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Ranking failed')
+      setScalingLoading(false)
     } finally {
       setLoading(false)
     }
@@ -503,6 +535,21 @@ export function OptimizePage() {
                 />
               )}
 
+              {/* Scaling planner card — appears after results, non-blocking */}
+              {scalingLoading && !scalingData && (
+                <div
+                  className="rounded-lg border animate-pulse"
+                  style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-elevated)', height: 112 }}
+                  aria-label="Loading scaling recommendation…"
+                />
+              )}
+              {!scalingLoading && scalingError && (
+                <p className="text-[11px]" style={{ color: 'var(--text-disabled)' }}>
+                  ⚠ Scaling estimate unavailable: {scalingError}
+                </p>
+              )}
+              {scalingData && <ScalingSummaryCard data={scalingData} />}
+
               {reportData && (
                 <div
                   className="rounded-lg border p-4 space-y-3"
@@ -575,20 +622,23 @@ export function OptimizePage() {
 
                   {Array.isArray(reportData.sections) && reportData.sections.length > 0 && (
                     <div className="space-y-2">
-                      {reportData.sections.slice(0, 3).map((section) => (
-                        <div key={section.title}>
-                          <div className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>
-                            {section.title}
+                      {reportData.sections
+                        // Suppress "Scaling Summary" when ScalingSummaryCard is already shown
+                        .filter((s) => !(scalingData && s.title === 'Scaling Summary'))
+                        .map((section) => (
+                          <div key={section.title}>
+                            <div className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>
+                              {section.title}
+                            </div>
+                            <ul className="mt-1 space-y-1">
+                              {section.bullets.map((bullet) => (
+                                <li key={bullet} className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
+                                  • {bullet}
+                                </li>
+                              ))}
+                            </ul>
                           </div>
-                          <ul className="mt-1 space-y-1">
-                            {section.bullets.slice(0, 2).map((bullet) => (
-                              <li key={bullet} className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
-                                • {bullet}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      ))}
+                        ))}
                     </div>
                   )}
                   {reportData.narrative && (

@@ -16,6 +16,25 @@ import { WORKLOAD_TYPES } from '@/lib/constants'
 type SortKey = keyof Pick<CatalogRow, 'provider' | 'unit_price_usd' | 'workload_type' | 'unit_name'>
 type SortDir = 'asc' | 'desc'
 
+// Per-workload accent colours for row hover (left border + bg tint)
+const WORKLOAD_ACCENT: Record<string, { bg: string; border: string }> = {
+  llm:              { bg: 'rgba(99,102,241,0.045)',  border: 'rgba(129,140,248,0.65)' },
+  speech_to_text:   { bg: 'rgba(16,185,129,0.045)', border: 'rgba(52,211,153,0.65)'  },
+  text_to_speech:   { bg: 'rgba(14,165,233,0.045)', border: 'rgba(56,189,248,0.65)'  },
+  embeddings:       { bg: 'rgba(139,92,246,0.045)', border: 'rgba(167,139,250,0.65)' },
+  vision:           { bg: 'rgba(245,158,11,0.045)', border: 'rgba(251,191,36,0.65)'  },
+  image_generation: { bg: 'rgba(236,72,153,0.045)', border: 'rgba(244,114,182,0.65)' },
+  video_generation: { bg: 'rgba(249,115,22,0.045)', border: 'rgba(251,146,60,0.65)'  },
+  moderation:       { bg: 'rgba(20,184,166,0.045)', border: 'rgba(45,212,191,0.65)'  },
+}
+
+// CSS injected once — workload-specific hover rules
+const CATALOG_ROW_STYLES = Object.entries(WORKLOAD_ACCENT)
+  .map(([wl, { bg, border }]) => `
+    .catalog-row[data-workload="${wl}"]:hover { background: ${bg}; }
+    .catalog-row[data-workload="${wl}"]:hover td:first-child { box-shadow: inset 3px 0 0 ${border}; }
+  `).join('')
+
 function SortIcon({ col, active, dir }: { col: string; active: string; dir: SortDir }) {
   if (col !== active) return <ArrowUpDown className="h-3 w-3 opacity-30" />
   return dir === 'asc'
@@ -154,6 +173,7 @@ export function CatalogTable({ rows, loading }: CatalogTableProps) {
 
   return (
     <div className="space-y-4">
+      <style>{CATALOG_ROW_STYLES}</style>
       {/* Browse mode toggle */}
       <div className="flex items-center gap-2">
         <span className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>Browse mode</span>
@@ -343,14 +363,15 @@ export function CatalogTable({ rows, loading }: CatalogTableProps) {
                 filtered.map((row, i) => (
                   <tr
                     key={i}
-                    className="table-row-hover group"
+                    className="catalog-row group"
+                    data-workload={row.workload_type}
                     style={{
                       borderBottom: '1px solid var(--border-subtle)',
-                      // Left accent line appears on hover via CSS
+                      transition: 'background 150ms ease',
                     }}
                   >
                     {/* Provider */}
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3" style={{ transition: 'box-shadow 150ms ease' }}>
                       <div className="flex items-center gap-2">
                         <ProviderLogo provider={row.provider} size="sm" />
                         <span className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>
@@ -359,10 +380,10 @@ export function CatalogTable({ rows, loading }: CatalogTableProps) {
                       </div>
                     </td>
                     {/* Workload */}
-                    <td className="px-4 py-3">
-                      <Badge variant="default" className="text-[10px]">
+                    <td className="px-4 py-3" style={{ transition: 'box-shadow 150ms ease' }}>
+                      <span className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>
                         {workloadDisplayName(row.workload_type)}
-                      </Badge>
+                      </span>
                     </td>
                     {/* SKU / Model */}
                     <td className="px-4 py-3 max-w-[200px]">

@@ -451,6 +451,12 @@
   100% { background-position:  200% 0; }
 }
 
+@keyframes watermarkDrift {
+  0%, 100% { transform: translate(-50%, -50%) scale(1)    rotate(-4deg); }
+  33%       { transform: translate(-48%, -52%) scale(1.04) rotate(-2deg); }
+  66%       { transform: translate(-52%, -48%) scale(0.97) rotate(-6deg); }
+}
+
 /* Respect reduced motion */
 @media (prefers-reduced-motion: reduce) {
   *, ::before, ::after {

@@ -238,6 +238,30 @@ export interface CopilotTurnResponse {
   is_ready: boolean
 }
 
+// ─── Scaling Planner ─────────────────────────────────────────────────────────
+
+export type DeploymentMode = 'serverless' | 'dedicated' | 'autoscale' | 'unknown'
+export type RiskBand = 'low' | 'medium' | 'high' | 'unknown'
+
+export interface ScalingPlanRequest {
+  mode: 'llm' | 'catalog'
+  llm_planning?: LLMPlanningResponse | null
+  catalog_ranking?: CatalogRankingResponse | null
+}
+
+export interface ScalingPlanResponse {
+  mode: 'llm' | 'catalog'
+  deployment_mode: DeploymentMode
+  estimated_gpu_count: number
+  suggested_gpu_type: string | null
+  projected_utilization: number | null
+  utilization_target: number | null
+  risk_band: RiskBand
+  capacity_check: 'ok' | 'insufficient' | 'unknown'
+  rationale: string
+  assumptions: string[]
+}
+
 // ─── Report Charts ────────────────────────────────────────────────────────────
 
 export type ChartType = 'bar' | 'line' | 'stacked_bar' | 'step_line'

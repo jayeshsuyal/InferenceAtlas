@@ -17,6 +17,8 @@ import type {
   CopilotApplyPayload,
   ReportGenerateRequest,
   ReportGenerateResponse,
+  ScalingPlanRequest,
+  ScalingPlanResponse,
 } from './types'
 
 const USE_MOCK = (import.meta.env.VITE_USE_MOCK_API ?? 'true').toLowerCase() !== 'false'
@@ -654,6 +656,49 @@ export async function askAI(req: AIAssistRequest): Promise<AIAssistResponse> {
     return mock.MOCK_AI_RESPONSES.default!
   }
   return post<AIAssistResponse>('/api/v1/ai/assist', req)
+}
+
+// ─── Scaling Planner ──────────────────────────────────────────────────────────
+
+export async function planScaling(req: ScalingPlanRequest): Promise<ScalingPlanResponse> {
+  if (USE_MOCK) {
+    await delay(550)
+    const isLLM = req.mode === 'llm'
+    const plans = req.llm_planning?.plans ?? []
+    const offers = req.catalog_ranking?.offers ?? []
+
+    const topRisk = plans.length > 0 ? plans[0].risk.total_risk : 0.25
+    const riskBand: ScalingPlanResponse['risk_band'] =
+      topRisk < 0.3 ? 'low' : topRisk < 0.6 ? 'medium' : 'high'
+    const gpuCount = isLLM ? Math.max(1, Math.ceil(plans.length * 0.8)) : 0
+
+    return {
+      mode: req.mode,
+      deployment_mode: isLLM ? 'autoscale' : 'serverless',
+      estimated_gpu_count: gpuCount,
+      suggested_gpu_type: isLLM ? 'A100 80GB' : null,
+      projected_utilization: isLLM ? 0.72 : null,
+      utilization_target: isLLM ? 0.75 : null,
+      risk_band: riskBand,
+      capacity_check: 'ok',
+      rationale: isLLM
+        ? `Autoscale deployment recommended across ${plans.length} provider plan${plans.length !== 1 ? 's' : ''}. GPU sizing targets 72% utilization at peak with a 20% headroom buffer. Overall risk profile is ${riskBand}.`
+        : `Serverless billing is optimal for ${offers.length} ranked catalog offer${offers.length !== 1 ? 's' : ''}. No sustained GPU reservation is required — scale-to-zero eliminates idle cost.`,
+      assumptions: isLLM
+        ? [
+            'GPU sizing derived from peak-to-avg ratio in form parameters',
+            'A100 80GB selected for frontier-class LLM model compatibility',
+            'Autoscale overhead: 20% buffer above projected peak load',
+            'Utilization target (75%) applies to steady-state traffic',
+          ]
+        : [
+            'Serverless billing model assumed for all selected providers',
+            'No dedicated GPU reservation required',
+            'Cost is usage-proportional; no idle overhead',
+          ],
+    }
+  }
+  return post<ScalingPlanResponse>('/api/v1/plan/scaling', req)
 }
 
 export async function generateReport(req: ReportGenerateRequest): Promise<ReportGenerateResponse> {

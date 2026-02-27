@@ -4,6 +4,7 @@ import { Menu, X } from 'lucide-react'
 import { Sidebar } from './Sidebar'
 import { Button } from './ui/button'
 import { AIContextProvider } from '@/context/AIContext'
+import { InferenceBackdrop } from './InferenceBackdrop'
 
 export function AppShell() {
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -11,6 +12,9 @@ export function AppShell() {
   return (
     <AIContextProvider>
     <div className="relative flex h-screen w-screen overflow-hidden" style={{ background: 'var(--bg-base)' }}>
+      {/* ── Neural inference graph backdrop ── */}
+      <InferenceBackdrop />
+
       {/* ── Ambient aurora orbs — behind everything ── */}
       <div aria-hidden className="pointer-events-none fixed inset-0 z-0 overflow-hidden">
         {/* Primary violet orb — top right */}
