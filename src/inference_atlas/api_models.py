@@ -423,6 +423,9 @@ class CostAuditResponse(BaseModel):
     recommendations: list[CostAuditRecommendation] = Field(default_factory=list)
     hardware_recommendation: CostAuditHardwareRecommendation
     pricing_model_verdict: CostAuditPricingVerdict
+    pricing_source: Literal["provider_csv", "heuristic_prior", "unknown"] = "unknown"
+    pricing_source_provider: Optional[str] = None
+    pricing_source_gpu: Optional[str] = None
     red_flags: list[str] = Field(default_factory=list)
     estimated_monthly_savings: CostAuditSavingsEstimate
     score_breakdown: CostAuditScoreBreakdown

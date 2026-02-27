@@ -611,6 +611,9 @@ def test_run_cost_audit_uses_provider_gpu_csv_basis_when_available() -> None:
     )
     assert switch_rec is not None
     assert "basis: provider_csv:fireworks:" in switch_rec.rationale
+    assert response.pricing_source == "provider_csv"
+    assert response.pricing_source_provider == "fireworks"
+    assert response.pricing_source_gpu == "A100_80GB"
 
 
 def test_run_cost_audit_falls_back_to_heuristic_basis_when_provider_not_in_gpu_csv() -> None:
@@ -641,6 +644,9 @@ def test_run_cost_audit_falls_back_to_heuristic_basis_when_provider_not_in_gpu_c
     )
     assert switch_rec is not None
     assert "basis: heuristic_prior:H100_80GB" in switch_rec.rationale
+    assert response.pricing_source == "heuristic_prior"
+    assert response.pricing_source_provider is None
+    assert response.pricing_source_gpu == "H100_80GB"
 
 
 def test_run_cost_audit_caps_score_on_high_savings_consider_switch() -> None:

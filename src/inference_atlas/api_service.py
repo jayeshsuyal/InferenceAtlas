@@ -579,7 +579,9 @@ def _resolve_gpu_hourly_from_csv(
     )
 
 
-def _estimate_dedicated_gpu_monthly_cost(payload: CostAuditRequest) -> tuple[float, int, str, float, str]:
+def _estimate_dedicated_gpu_monthly_cost(
+    payload: CostAuditRequest,
+) -> tuple[float, int, str, float, str, str, str | None, str]:
     total_tokens = float(payload.monthly_input_tokens or 0.0) + float(payload.monthly_output_tokens or 0.0)
     if payload.gpu_count is not None and payload.gpu_count > 0:
         gpu_count = int(payload.gpu_count)
@@ -602,10 +604,14 @@ def _estimate_dedicated_gpu_monthly_cost(payload: CostAuditRequest) -> tuple[flo
         hourly = fallback_hourly
         gpu_type = requested_gpu_type
         pricing_basis = f"heuristic_prior:{gpu_type}"
+        pricing_source = "heuristic_prior"
+        pricing_source_provider = None
     else:
         hourly = csv_hourly
         gpu_type = csv_gpu_type or requested_gpu_type
         provider_label = csv_provider or "catalog"
+        pricing_source = "provider_csv"
+        pricing_source_provider = provider_label
         if csv_source_url:
             pricing_basis = f"provider_csv:{provider_label}:{csv_source_url}"
         else:
@@ -616,7 +622,16 @@ def _estimate_dedicated_gpu_monthly_cost(payload: CostAuditRequest) -> tuple[flo
     factor = PROCUREMENT_DISCOUNT_FACTOR.get(procurement, 1.0)
     effective_hourly = hourly * factor
     monthly = gpu_count * effective_hourly * 730.0
-    return monthly, gpu_count, gpu_type, effective_hourly, pricing_basis
+    return (
+        monthly,
+        gpu_count,
+        gpu_type,
+        effective_hourly,
+        pricing_basis,
+        pricing_source,
+        pricing_source_provider,
+        gpu_type,
+    )
 
 
 def _gap(field: str, impact: str, why: str) -> CostAuditDataGap:
@@ -651,6 +666,9 @@ def run_cost_audit(payload: CostAuditRequest) -> CostAuditResponse:
     assumptions: list[str] = []
     data_gaps_detailed: list[CostAuditDataGap] = []
     major_flags = 0
+    pricing_source: str = "unknown"
+    pricing_source_provider: str | None = None
+    pricing_source_gpu: str | None = None
 
     if payload.quantization_applied == "no" and payload.model_precision in {"fp16", "bf16", "unknown"}:
         penalty_points += 14
@@ -675,7 +693,16 @@ def run_cost_audit(payload: CostAuditRequest) -> CostAuditResponse:
         major_flags += 1
         red_flags.append("Steady traffic on on-demand GPUs suggests avoidable reservation waste.")
         if float(payload.monthly_ai_spend_usd or 0.0) <= 0 and payload.pricing_model != "token_api":
-            _estimated_dedicated_spend, _gpu_count, _gpu_type, _hourly, _pricing_basis = _estimate_dedicated_gpu_monthly_cost(payload)
+            (
+                _estimated_dedicated_spend,
+                _gpu_count,
+                _gpu_type,
+                _hourly,
+                _pricing_basis,
+                _pricing_source,
+                _pricing_source_provider,
+                _pricing_source_gpu,
+            ) = _estimate_dedicated_gpu_monthly_cost(payload)
             assumptions.append("Dedicated spend baseline estimated from GPU type/count and on-demand hourly priors.")
         reserved_factor = PROCUREMENT_DISCOUNT_FACTOR["reserved"] / PROCUREMENT_DISCOUNT_FACTOR["on_demand"]
         procurement_savings_pct = max(0.0, min(100.0, (1.0 - reserved_factor) * 100.0))
@@ -747,7 +774,16 @@ def run_cost_audit(payload: CostAuditRequest) -> CostAuditResponse:
             )
 
         total_tokens = float(payload.monthly_input_tokens or 0.0) + float(payload.monthly_output_tokens or 0.0)
-        dedicated_cost, est_gpu_count, est_gpu_type, est_hourly, pricing_basis = _estimate_dedicated_gpu_monthly_cost(payload)
+        (
+            dedicated_cost,
+            est_gpu_count,
+            est_gpu_type,
+            est_hourly,
+            pricing_basis,
+            pricing_source,
+            pricing_source_provider,
+            pricing_source_gpu,
+        ) = _estimate_dedicated_gpu_monthly_cost(payload)
         denominator = current_spend if current_spend > 0 else float(token_cost_est or 0.0)
         switch_savings_pct = (
             max(0.0, min(100.0, ((denominator - dedicated_cost) / denominator) * 100.0))
@@ -781,6 +817,16 @@ def run_cost_audit(payload: CostAuditRequest) -> CostAuditResponse:
             verdict = "appropriate"
             reason = "Token API is typically appropriate for low-to-mid volume and faster time-to-production."
     elif payload.pricing_model == "dedicated_gpu":
+        (
+            _dedicated_cost,
+            _est_gpu_count,
+            _est_gpu_type,
+            _est_hourly,
+            _pricing_basis,
+            pricing_source,
+            pricing_source_provider,
+            pricing_source_gpu,
+        ) = _estimate_dedicated_gpu_monthly_cost(payload)
         if payload.gpu_type is None:
             data_gaps_detailed.append(
                 _gap(
@@ -956,6 +1002,9 @@ def run_cost_audit(payload: CostAuditRequest) -> CostAuditResponse:
             verdict=verdict,
             reason=reason,
         ),
+        pricing_source=pricing_source,
+        pricing_source_provider=pricing_source_provider,
+        pricing_source_gpu=pricing_source_gpu,
         red_flags=red_flags,
         estimated_monthly_savings=CostAuditSavingsEstimate(
             low_usd=round(low_savings, 2),
