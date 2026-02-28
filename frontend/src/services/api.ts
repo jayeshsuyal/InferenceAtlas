@@ -9,6 +9,7 @@ import type {
   CatalogRankingRequest,
   CatalogRankingResponse,
   CatalogBrowseResponse,
+  QualityCatalogResponse,
   InvoiceAnalysisResponse,
   AIAssistRequest,
   AIAssistResponse,
@@ -481,6 +482,107 @@ export async function browseCatalog(filters?: {
     ...(filters?.provider ? { provider: filters.provider } : {}),
     ...(filters?.unit_name ? { unit_name: filters.unit_name } : {}),
   }, filters?.signal)
+}
+
+// ─── Quality Catalog (v2.0) ─────────────────────────────────────────────────
+
+function mockQualityScore(modelKey: string, workload: string): number | null {
+  const token = `${modelKey} ${workload}`.toLowerCase()
+  if (
+    token.includes('claude-opus') ||
+    token.includes('gpt-4o') ||
+    token.includes('gemini-2.5-pro')
+  ) {
+    return 90
+  }
+  if (token.includes('deepseek') || token.includes('llama')) {
+    return 80
+  }
+  if (token.includes('whisper') || token.includes('nova-2')) {
+    return 84
+  }
+  if (token.includes('embedding') || token.includes('voyage')) {
+    return 78
+  }
+  return null
+}
+
+export async function getQualityCatalog(filters?: {
+  workload_type?: string
+  provider?: string
+  model_key_query?: string
+  mapped_only?: boolean
+  signal?: AbortSignal
+}): Promise<QualityCatalogResponse> {
+  if (USE_MOCK) {
+    await delay(400)
+    const allRows = await getMockCatalogRows()
+    const query = filters?.model_key_query?.trim().toLowerCase() ?? ''
+    const mappedOnly = filters?.mapped_only ?? false
+
+    const rows = allRows
+      .filter((r) => {
+        if (filters?.workload_type && r.workload_type !== filters.workload_type) return false
+        if (filters?.provider && r.provider !== filters.provider) return false
+        if (
+          query &&
+          !((r.model_name ?? '').toLowerCase().includes(query) || r.sku_name.toLowerCase().includes(query))
+        ) {
+          return false
+        }
+        return true
+      })
+      .map((r) => {
+        const score = mockQualityScore(r.model_name ?? '', r.workload_type)
+        const mapped = score !== null
+        return {
+          provider: r.provider,
+          workload_type: r.workload_type,
+          model_key: r.model_name ?? '',
+          sku_name: r.sku_name,
+          billing_mode: r.billing_mode,
+          unit_price_usd: r.unit_price_usd,
+          unit_name: r.unit_name,
+          quality_mapped: mapped,
+          quality_model_id: mapped ? (r.model_name ?? '') : null,
+          quality_score_0_100: score,
+          quality_score_adjusted_0_100: mapped ? Number((50 + ((score ?? 50) - 50) * 0.8).toFixed(3)) : null,
+          quality_confidence: mapped ? 'medium' : null,
+          quality_confidence_weight: mapped ? 0.8 : null,
+          quality_matched_by: mapped ? 'alias' : null,
+        }
+      })
+      .filter((r) => (mappedOnly ? r.quality_mapped : true))
+      .sort((a, b) => {
+        const am = a.quality_mapped ? 0 : 1
+        const bm = b.quality_mapped ? 0 : 1
+        if (am !== bm) return am - bm
+        const as = a.quality_score_adjusted_0_100 ?? -1
+        const bs = b.quality_score_adjusted_0_100 ?? -1
+        if (as !== bs) return bs - as
+        if (a.unit_price_usd !== b.unit_price_usd) return a.unit_price_usd - b.unit_price_usd
+        return a.provider.localeCompare(b.provider)
+      })
+
+    const mappedCount = rows.filter((r) => r.quality_mapped).length
+    return {
+      rows,
+      total: rows.length,
+      mapped_count: mappedCount,
+      unmapped_count: rows.length - mappedCount,
+    }
+  }
+
+  return get<QualityCatalogResponse>(
+    '/api/v1/quality/catalog',
+    {
+      ...(filters?.workload_type ? { workload_type: filters.workload_type } : {}),
+      ...(filters?.provider ? { provider: filters.provider } : {}),
+      ...(filters?.model_key_query ? { model_key_query: filters.model_key_query } : {}),
+      ...(typeof filters?.mapped_only === 'boolean' ? { mapped_only: String(filters.mapped_only) } : {}),
+    },
+    filters?.signal
+  )
 }
 
 // ─── Invoice Analysis ─────────────────────────────────────────────────────────

@@ -138,6 +138,32 @@ export interface CatalogBrowseResponse {
   total: number
 }
 
+// ─── Quality Catalog (v2.0) ─────────────────────────────────────────────────
+
+export interface QualityCatalogRow {
+  provider: string
+  workload_type: string
+  model_key: string
+  sku_name: string
+  billing_mode: BillingMode
+  unit_price_usd: number
+  unit_name: string
+  quality_mapped: boolean
+  quality_model_id?: string | null
+  quality_score_0_100?: number | null
+  quality_score_adjusted_0_100?: number | null
+  quality_confidence?: string | null
+  quality_confidence_weight?: number | null
+  quality_matched_by?: string | null
+}
+
+export interface QualityCatalogResponse {
+  rows: QualityCatalogRow[]
+  total: number
+  mapped_count: number
+  unmapped_count: number
+}
+
 // ─── Invoice Analysis ─────────────────────────────────────────────────────────
 
 export interface InvoiceLineItem {
