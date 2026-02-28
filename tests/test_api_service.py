@@ -22,6 +22,8 @@ from inference_atlas.api_service import (
     run_invoice_analyze,
     run_plan_llm,
     run_plan_scaling,
+    run_quality_catalog,
+    run_quality_insights,
     run_rank_catalog,
 )
 
@@ -106,6 +108,50 @@ def test_run_browse_catalog_filters_workload() -> None:
     response = run_browse_catalog(workload_type="llm")
     assert response.total >= 1
     assert all(row["workload_type"] == "llm" for row in response.rows)
+
+
+def test_run_quality_catalog_returns_rows_and_mapping_counts() -> None:
+    response = run_quality_catalog(workload_type="llm")
+    assert response.total >= 1
+    assert response.mapped_count + response.unmapped_count == response.total
+    assert all(row.workload_type == "llm" for row in response.rows)
+
+
+def test_run_quality_catalog_mapped_only_filter() -> None:
+    response = run_quality_catalog(workload_type="llm", mapped_only=True)
+    assert response.total >= 1
+    assert all(row.quality_mapped for row in response.rows)
+
+
+def test_run_quality_insights_returns_pareto_flags() -> None:
+    response = run_quality_insights(workload_type="llm", mapped_only=True)
+    assert response.total_points >= 1
+    assert response.frontier_count >= 1
+    assert all(point.quality_score_adjusted_0_100 >= 0 for point in response.points)
+    assert any(point.is_pareto_frontier for point in response.points)
+
+
+def test_run_quality_insights_frontier_points_are_not_dominated() -> None:
+    response = run_quality_insights(workload_type="llm", mapped_only=True)
+    for point in response.points:
+        if not point.is_pareto_frontier:
+            continue
+        dominated = False
+        for other in response.points:
+            if other is point:
+                continue
+            price_better_or_equal = other.unit_price_usd <= point.unit_price_usd
+            quality_better_or_equal = (
+                other.quality_score_adjusted_0_100 >= point.quality_score_adjusted_0_100
+            )
+            strictly_better = (
+                other.unit_price_usd < point.unit_price_usd
+                or other.quality_score_adjusted_0_100 > point.quality_score_adjusted_0_100
+            )
+            if price_better_or_equal and quality_better_or_equal and strictly_better:
+                dominated = True
+                break
+        assert dominated is False
 
 
 def test_run_invoice_analyze_returns_line_items() -> None:

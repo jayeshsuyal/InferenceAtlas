@@ -19,6 +19,10 @@ from inference_atlas.api_models import (
     AIAssistRequest,
     AIAssistResponse,
     CatalogBrowseResponse,
+    QualityCatalogResponse,
+    QualityCatalogRow,
+    QualityInsightPoint,
+    QualityInsightsResponse,
     CatalogRankingRequest,
     CatalogRankingResponse,
     CostAuditDataGap,
@@ -57,6 +61,7 @@ from inference_atlas.invoice_analyzer import analyze_invoice_csv
 from inference_atlas.llm.router import LLMRouter
 from inference_atlas.llm.schema import WorkloadSpec
 from inference_atlas.mvp_planner import get_provider_compatibility, rank_configs
+from inference_atlas.quality_metrics import get_quality_scores_for_workload
 
 
 EXCLUSION_REASON_LABELS: dict[str, str] = {
@@ -317,6 +322,145 @@ def run_browse_catalog(
             }
         )
     return CatalogBrowseResponse(rows=payload_rows, total=len(payload_rows))
+
+
+def run_quality_catalog(
+    workload_type: str | None = None,
+    provider: str | None = None,
+    model_key_query: str | None = None,
+    mapped_only: bool = False,
+) -> QualityCatalogResponse:
+    scored = get_quality_scores_for_workload(workload_type=workload_type)
+    query = (model_key_query or "").strip().lower()
+    payload_rows: list[QualityCatalogRow] = []
+    mapped_count = 0
+
+    for row, quality in scored:
+        if provider is not None and row.provider != provider:
+            continue
+        if query and query not in row.model_key.lower() and query not in row.sku_name.lower():
+            continue
+        if mapped_only and quality is None:
+            continue
+
+        quality_mapped = quality is not None
+        if quality_mapped:
+            mapped_count += 1
+
+        payload_rows.append(
+            QualityCatalogRow(
+                provider=row.provider,
+                workload_type=row.workload_type,
+                model_key=row.model_key,
+                sku_name=row.sku_name,
+                billing_mode=row.billing_mode,
+                unit_price_usd=row.unit_price_usd,
+                unit_name=row.unit_name,
+                quality_mapped=quality_mapped,
+                quality_model_id=(quality.model_id if quality else None),
+                quality_score_0_100=(quality.normalized_score if quality else None),
+                quality_score_adjusted_0_100=(quality.adjusted_score if quality else None),
+                quality_confidence=(quality.confidence if quality else None),
+                quality_confidence_weight=(quality.confidence_weight if quality else None),
+                quality_matched_by=(quality.matched_by if quality else None),
+            )
+        )
+
+    payload_rows.sort(
+        key=lambda r: (
+            0 if r.quality_mapped else 1,
+            -(r.quality_score_adjusted_0_100 or -1.0),
+            r.unit_price_usd,
+            r.provider,
+            r.model_key,
+        )
+    )
+    total = len(payload_rows)
+    return QualityCatalogResponse(
+        rows=payload_rows,
+        total=total,
+        mapped_count=mapped_count,
+        unmapped_count=max(0, total - mapped_count),
+    )
+
+
+def _compute_pareto_frontier_flags(points: list[QualityInsightPoint]) -> list[bool]:
+    """Pareto frontier for minimizing price and maximizing quality."""
+    flags = [True] * len(points)
+    for i, p in enumerate(points):
+        for j, q in enumerate(points):
+            if i == j:
+                continue
+            price_better_or_equal = q.unit_price_usd <= p.unit_price_usd
+            quality_better_or_equal = q.quality_score_adjusted_0_100 >= p.quality_score_adjusted_0_100
+            strictly_better = (
+                q.unit_price_usd < p.unit_price_usd
+                or q.quality_score_adjusted_0_100 > p.quality_score_adjusted_0_100
+            )
+            if price_better_or_equal and quality_better_or_equal and strictly_better:
+                flags[i] = False
+                break
+    return flags
+
+
+def run_quality_insights(
+    workload_type: str | None = None,
+    provider: str | None = None,
+    model_key_query: str | None = None,
+    mapped_only: bool = True,
+) -> QualityInsightsResponse:
+    catalog = run_quality_catalog(
+        workload_type=workload_type,
+        provider=provider,
+        model_key_query=model_key_query,
+        mapped_only=mapped_only,
+    )
+    points: list[QualityInsightPoint] = []
+    for row in catalog.rows:
+        if not row.quality_mapped:
+            continue
+        adjusted = row.quality_score_adjusted_0_100
+        confidence = row.quality_confidence
+        if adjusted is None or confidence is None:
+            continue
+        points.append(
+            QualityInsightPoint(
+                provider=row.provider,
+                workload_type=row.workload_type,
+                model_key=row.model_key,
+                sku_name=row.sku_name,
+                unit_name=row.unit_name,
+                unit_price_usd=row.unit_price_usd,
+                quality_score_adjusted_0_100=adjusted,
+                quality_confidence=confidence,
+                is_pareto_frontier=False,
+            )
+        )
+
+    if points:
+        flags = _compute_pareto_frontier_flags(points)
+        points = [
+            p.model_copy(update={"is_pareto_frontier": flags[idx]})
+            for idx, p in enumerate(points)
+        ]
+        points.sort(
+            key=lambda p: (
+                0 if p.is_pareto_frontier else 1,
+                p.unit_price_usd,
+                -p.quality_score_adjusted_0_100,
+                p.provider,
+                p.model_key,
+            )
+        )
+
+    frontier_count = sum(1 for p in points if p.is_pareto_frontier)
+    return QualityInsightsResponse(
+        points=points,
+        total_points=len(points),
+        frontier_count=frontier_count,
+        mapped_count=catalog.mapped_count,
+        unmapped_count=catalog.unmapped_count,
+    )
 
 
 def run_invoice_analyze(file_bytes: bytes) -> InvoiceAnalysisResponse:

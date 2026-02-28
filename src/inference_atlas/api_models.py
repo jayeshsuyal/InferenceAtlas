@@ -120,6 +120,58 @@ class CatalogBrowseResponse(BaseModel):
     total: int
 
 
+class QualityCatalogRow(BaseModel):
+    model_config = ConfigDict(extra="ignore", protected_namespaces=())
+
+    provider: str
+    workload_type: str
+    model_key: str
+    sku_name: str
+    billing_mode: str
+    unit_price_usd: float
+    unit_name: str
+    quality_mapped: bool
+    quality_model_id: Optional[str] = None
+    quality_score_0_100: Optional[float] = None
+    quality_score_adjusted_0_100: Optional[float] = None
+    quality_confidence: Optional[str] = None
+    quality_confidence_weight: Optional[float] = None
+    quality_matched_by: Optional[str] = None
+
+
+class QualityCatalogResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    rows: list[QualityCatalogRow]
+    total: int
+    mapped_count: int
+    unmapped_count: int
+
+
+class QualityInsightPoint(BaseModel):
+    model_config = ConfigDict(extra="ignore", protected_namespaces=())
+
+    provider: str
+    workload_type: str
+    model_key: str
+    sku_name: str
+    unit_name: str
+    unit_price_usd: float
+    quality_score_adjusted_0_100: float
+    quality_confidence: str
+    is_pareto_frontier: bool = False
+
+
+class QualityInsightsResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    points: list[QualityInsightPoint]
+    total_points: int
+    frontier_count: int
+    mapped_count: int
+    unmapped_count: int
+
+
 class InvoiceLineItem(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
