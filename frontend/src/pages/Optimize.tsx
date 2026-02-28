@@ -1,31 +1,61 @@
-import { useRef, useState } from 'react'
-import { ArrowLeft, Download, Loader2, Sparkles, SlidersHorizontal, X } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { ArrowLeft, SlidersHorizontal, Sparkles, X } from 'lucide-react'
+import { useLocation, useSearchParams } from 'react-router-dom'
 import { useAIContext } from '@/context/AIContext'
 import { WorkloadSelector } from '@/components/WorkloadSelector'
 import { LLMForm } from '@/components/optimize/LLMForm'
 import { NonLLMForm } from '@/components/optimize/NonLLMForm'
 import { CopilotPanel } from '@/components/optimize/CopilotPanel'
 import { ResultsTable } from '@/components/optimize/ResultsTable'
-import { ReportCharts } from '@/components/optimize/ReportCharts'
-import { ScalingSummaryCard } from '@/components/optimize/ScalingSummaryCard'
 import { SkeletonCard } from '@/components/ui/skeleton'
-import { downloadReport, generateReport, planLLMWorkload, planScaling, rankCatalogOffers } from '@/services/api'
+import { planLLMWorkload, rankCatalogOffers } from '@/services/api'
 import type { LLMFormValues, NonLLMFormValues } from '@/schemas/forms'
 import type {
   LLMPlanningResponse,
   CatalogRankingResponse,
   CopilotApplyPayload,
-  ReportGenerateRequest,
-  ReportGenerateResponse,
-  ScalingPlanResponse,
+  CostAuditAlternative,
 } from '@/services/types'
 import type { WorkloadTypeId } from '@/lib/constants'
 import { WORKLOAD_TYPES } from '@/lib/constants'
+import { Badge } from '@/components/ui/badge'
 
 type Step = 'select' | 'configure'
 type ConfigMode = 'copilot' | 'guided'
 
+function canonicalWorkloadFromQuery(raw: string | null): WorkloadTypeId | null {
+  if (!raw) return null
+  const token = raw.trim().toLowerCase()
+  if (token === 'llm') return 'llm'
+  if (token === 'speech_to_text' || token === 'asr' || token === 'stt') return 'speech_to_text'
+  return null
+}
+
+function formatUsd(value: number): string {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: 0,
+  }).format(value)
+}
+
+function providerNameFromId(provider: string): string {
+  const token = provider.replace(/[_-]/g, ' ').trim()
+  return token
+    .split(/\s+/)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ')
+}
+
+interface AuditNavState {
+  auditRecommendedOptions?: CostAuditAlternative[]
+  auditModelName?: string
+}
+
 export function OptimizePage() {
+  const [searchParams] = useSearchParams()
+  const location = useLocation()
+  const locationState = (location.state ?? {}) as AuditNavState
   const [step, setStep] = useState<Step>('select')
   const [mode, setMode] = useState<ConfigMode>('copilot')
   const [workload, setWorkload] = useState<WorkloadTypeId | null>(null)
@@ -34,17 +64,37 @@ export function OptimizePage() {
   const [error, setError] = useState<string | null>(null)
   const [llmResult, setLlmResult] = useState<LLMPlanningResponse | null>(null)
   const [catalogResult, setCatalogResult] = useState<CatalogRankingResponse | null>(null)
-  const [reportLoading, setReportLoading] = useState(false)
-  const [reportError, setReportError] = useState<string | null>(null)
-  const [reportData, setReportData] = useState<ReportGenerateResponse | null>(null)
-  const [scalingData, setScalingData] = useState<ScalingPlanResponse | null>(null)
-  const [scalingLoading, setScalingLoading] = useState(false)
-  const [scalingError, setScalingError] = useState<string | null>(null)
-  const [downloadSuccess, setDownloadSuccess] = useState(false)
-  const [reportFormat, setReportFormat] = useState<'markdown' | 'html' | 'pdf'>('markdown')
-  // Incremented on every new optimize run; callbacks check equality to drop stale responses
-  const scalingRunRef = useRef(0)
+  const [auditRecommendedOptions, setAuditRecommendedOptions] = useState<CostAuditAlternative[]>([])
+  const [auditModelName, setAuditModelName] = useState<string | null>(null)
   const { setAIContext } = useAIContext()
+
+  useEffect(() => {
+    if (step !== 'select' || workload !== null) return
+    const queryFromAudit = searchParams.get('from') === 'audit' || searchParams.get('source') === 'audit'
+    const queryWorkload = canonicalWorkloadFromQuery(searchParams.get('workload'))
+    if (!queryFromAudit && queryWorkload === null) return
+
+    const qTokens = Number(searchParams.get('tokens_per_day') ?? '')
+    const qBudget = Number(searchParams.get('monthly_budget') ?? '')
+    const resolvedWorkload: WorkloadTypeId = queryWorkload ?? 'llm'
+
+    if (resolvedWorkload === 'llm') {
+      const seeded: Partial<LLMFormValues> = {}
+      if (Number.isFinite(qTokens) && qTokens > 0) seeded.tokens_per_day = qTokens
+      if (Number.isFinite(qBudget) && qBudget > 0) seeded.monthly_budget_max_usd = qBudget
+      setInitialValues(Object.keys(seeded).length > 0 ? (seeded as CopilotApplyPayload) : null)
+    } else {
+      const seeded: Partial<NonLLMFormValues> = { workload_type: 'speech_to_text' }
+      if (Number.isFinite(qBudget) && qBudget > 0) seeded.monthly_budget_max_usd = qBudget
+      setInitialValues(seeded as CopilotApplyPayload)
+    }
+    setWorkload(resolvedWorkload)
+    setMode('guided')
+    setStep('configure')
+    setAuditRecommendedOptions(locationState.auditRecommendedOptions ?? [])
+    setAuditModelName(locationState.auditModelName ?? null)
+    setAIContext({ workload_type: resolvedWorkload, providers: [] })
+  }, [locationState.auditModelName, locationState.auditRecommendedOptions, searchParams, setAIContext, step, workload])
 
   function handleWorkloadSelect(id: WorkloadTypeId) {
     setWorkload(id)
@@ -54,12 +104,6 @@ export function OptimizePage() {
     setLlmResult(null)
     setCatalogResult(null)
     setError(null)
-    setReportError(null)
-    setReportData(null)
-    setDownloadSuccess(false)
-    setScalingData(null)
-    setScalingLoading(false)
-    setScalingError(null)
     setAIContext({ workload_type: id, providers: [] })
   }
 
@@ -76,22 +120,12 @@ export function OptimizePage() {
     setLlmResult(null)
     setCatalogResult(null)
     setError(null)
-    setReportError(null)
-    setReportData(null)
-    setDownloadSuccess(false)
-    setReportFormat('markdown')
-    setScalingData(null)
-    setScalingLoading(false)
-    setScalingError(null)
     setAIContext({ workload_type: null, providers: [] })
   }
 
   async function handleLLMSubmit(values: LLMFormValues) {
     setLoading(true)
     setError(null)
-    setScalingData(null)
-    setScalingLoading(true)
-    setScalingError(null)
     try {
       const res = await planLLMWorkload({
         tokens_per_day: values.tokens_per_day,
@@ -107,21 +141,12 @@ export function OptimizePage() {
         top_k: values.top_k,
       })
       setLlmResult(res)
-      setReportError(null)
-      setReportData(null)
       setAIContext({
         workload_type: workload,
         providers: [...new Set(res.plans.map((p) => p.provider_id))],
       })
-      // Non-blocking — scaling card appears when ready; run counter drops stale responses
-      const thisRun = ++scalingRunRef.current
-      void planScaling({ mode: 'llm', llm_planning: res })
-        .then((s) => { if (scalingRunRef.current === thisRun) { setScalingData(s); setScalingError(null) } })
-        .catch((e) => { if (scalingRunRef.current === thisRun) setScalingError(e instanceof Error ? e.message : 'Scaling estimate unavailable') })
-        .finally(() => { if (scalingRunRef.current === thisRun) setScalingLoading(false) })
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Planning failed')
-      setScalingLoading(false)
     } finally {
       setLoading(false)
     }
@@ -130,9 +155,6 @@ export function OptimizePage() {
   async function handleNonLLMSubmit(values: NonLLMFormValues) {
     setLoading(true)
     setError(null)
-    setScalingData(null)
-    setScalingLoading(true)
-    setScalingError(null)
     try {
       const res = await rankCatalogOffers({
         workload_type: values.workload_type,
@@ -149,20 +171,12 @@ export function OptimizePage() {
         strict_capacity_check: values.strict_capacity_check,
       })
       setCatalogResult(res)
-      setReportError(null)
-      setReportData(null)
       setAIContext({
         workload_type: workload,
         providers: [...new Set(res.offers.map((o) => o.provider))],
       })
-      const thisRun = ++scalingRunRef.current
-      void planScaling({ mode: 'catalog', catalog_ranking: res })
-        .then((s) => { if (scalingRunRef.current === thisRun) { setScalingData(s); setScalingError(null) } })
-        .catch((e) => { if (scalingRunRef.current === thisRun) setScalingError(e instanceof Error ? e.message : 'Scaling estimate unavailable') })
-        .finally(() => { if (scalingRunRef.current === thisRun) setScalingLoading(false) })
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Ranking failed')
-      setScalingLoading(false)
     } finally {
       setLoading(false)
     }
@@ -172,84 +186,18 @@ export function OptimizePage() {
   const hasResults = isLLM ? llmResult !== null : catalogResult !== null
   const workloadMeta = WORKLOAD_TYPES.find((w) => w.id === workload)
 
-  const chartData = reportData?.chart_data ?? {}
-  const costByRankCount = Array.isArray(chartData['cost_by_rank'])
-    ? (chartData['cost_by_rank'] as unknown[]).length : null
-  const riskBreakdownCount = Array.isArray(chartData['risk_breakdown'])
-    ? (chartData['risk_breakdown'] as unknown[]).length : null
-  const exclusionKeys = (typeof chartData['exclusion_breakdown'] === 'object' &&
-    chartData['exclusion_breakdown'] !== null &&
-    !Array.isArray(chartData['exclusion_breakdown']))
-    ? Object.keys(chartData['exclusion_breakdown'] as Record<string, unknown>).length : null
-
-  function downloadBlob(blob: Blob, filename: string) {
-    const url = URL.createObjectURL(blob)
-    const anchor = document.createElement('a')
-    anchor.href = url
-    anchor.download = filename
-    document.body.appendChild(anchor)
-    anchor.click()
-    anchor.remove()
-    URL.revokeObjectURL(url)
-    setDownloadSuccess(true)
-    window.setTimeout(() => setDownloadSuccess(false), 3000)
-  }
-
-  function downloadCsvFromReport(report: ReportGenerateResponse, key: string) {
-    const csvText = report.csv_exports?.[key]
-    if (!csvText) return
-    const blob = new Blob([csvText], { type: 'text/csv;charset=utf-8' })
-    downloadBlob(blob, key)
-  }
-
-  async function handleGenerateReport(autoDownload = false) {
-    if (!workload) return
-    setReportLoading(true)
-    setReportError(null)
-    try {
-      const req: ReportGenerateRequest = isLLM
-        ? {
-            mode: 'llm',
-            title: `${workloadMeta?.label ?? 'LLM'} Optimization Report`,
-            output_format: reportFormat,
-            include_charts: true,
-            include_csv_exports: true,
-            include_narrative: true,
-            llm_planning: llmResult ?? undefined,
-          }
-        : {
-            mode: 'catalog',
-            title: `${workloadMeta?.label ?? 'Catalog'} Optimization Report`,
-            output_format: reportFormat,
-            include_charts: true,
-            include_csv_exports: true,
-            include_narrative: true,
-            catalog_ranking: catalogResult ?? undefined,
-          }
-      const report = await generateReport(req)
-      setReportData(report)
-      if (autoDownload) {
-        const downloaded = await downloadReport(req)
-        downloadBlob(downloaded.blob, downloaded.filename)
-      }
-    } catch (e) {
-      setReportError(e instanceof Error ? e.message : 'Report generation failed')
-    } finally {
-      setReportLoading(false)
-    }
-  }
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-8 sm:px-6">
+    <div className="max-w-5xl mx-auto px-5 py-8 sm:px-8">
       {/* ── Page header (select step only) ── */}
       {step === 'select' && (
-        <div className="mb-8 page-section">
-          <div className="eyebrow mb-2">Cost Intelligence</div>
+        <div className="mb-8 page-section hero-panel p-5 sm:p-6">
+          <div className="headline-kicker mb-2">Cost Intelligence</div>
           <h1 className="text-2xl font-bold tracking-tight mb-2">
             <span className="text-gradient">Optimize</span>{' '}
             <span style={{ color: 'var(--text-primary)' }}>Workload</span>
           </h1>
-          <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+          <p className="text-sm max-w-2xl" style={{ color: 'var(--text-secondary)' }}>
             Pick a workload category and we'll rank the most cost-effective inference options
             across every major AI provider.
           </p>
@@ -269,7 +217,7 @@ export function OptimizePage() {
       )}
 
       {/* Step indicator */}
-      <div className="flex items-center gap-2 mb-6">
+      <div className="flex items-center gap-2 mb-6 px-1">
         {(['select', 'configure'] as Step[]).map((s, i) => {
           const isActive = step === s
           const isDone = step === 'configure' && s === 'select'
@@ -308,8 +256,8 @@ export function OptimizePage() {
       {step === 'configure' && workload && (
         <div className="space-y-5 animate-enter">
           {/* Workload header */}
-          <div>
-            <div className="eyebrow mb-1">{workloadMeta?.label ?? workload.replace(/_/g, ' ')}</div>
+          <div className="hero-panel p-4 sm:p-5">
+            <div className="headline-kicker mb-1">{workloadMeta?.label ?? workload.replace(/_/g, ' ')}</div>
             <h2 className="text-lg font-bold tracking-tight" style={{ color: 'var(--text-primary)' }}>
               Cost Optimization
             </h2>
@@ -355,6 +303,58 @@ export function OptimizePage() {
           {/* ── Guided mode ── */}
           {mode === 'guided' && (
             <>
+              {auditRecommendedOptions.length > 0 && (
+                <div className="rounded-xl border p-4 space-y-3" style={{ borderColor: 'var(--brand-border)', background: 'rgba(34,211,238,0.06)' }}>
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div>
+                      <div className="eyebrow mb-0.5">From Cost Audit</div>
+                      <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                        {auditModelName ? `Top alternatives for ${auditModelName}` : 'Top alternatives from your audit run'}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setAuditRecommendedOptions([])}
+                      className="text-[11px] transition-colors hover:opacity-100"
+                      style={{ color: 'var(--text-disabled)' }}
+                    >
+                      hide
+                    </button>
+                  </div>
+                  <div className="space-y-2">
+                    {auditRecommendedOptions.slice(0, 3).map((opt, idx) => (
+                      <div
+                        key={`${opt.provider}-${opt.gpu_type ?? 'none'}-${opt.deployment_mode}-${idx}`}
+                        className="rounded-lg border px-3 py-2 flex items-start justify-between gap-3"
+                        style={{ borderColor: 'var(--border-default)', background: 'var(--bg-elevated)' }}
+                      >
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>
+                              {providerNameFromId(opt.provider)}
+                            </span>
+                            <Badge variant="default">{opt.deployment_mode}</Badge>
+                            {opt.gpu_type ? <Badge variant="violet">{opt.gpu_type}</Badge> : null}
+                          </div>
+                          <p className="text-[11px] mt-1" style={{ color: 'var(--text-tertiary)' }}>
+                            {opt.rationale}
+                          </p>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <div className="micro-label mb-0.5">Monthly</div>
+                          <div className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>
+                            {formatUsd(opt.estimated_monthly_cost_usd)}
+                          </div>
+                          <div className="text-[11px]" style={{ color: 'var(--success)' }}>
+                            Save {formatUsd(Math.max(0, opt.savings_vs_current_usd))}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {error && (
                 <div
                   className="rounded-lg px-3 py-2.5 text-xs flex items-start justify-between gap-2 border"
@@ -413,109 +413,9 @@ export function OptimizePage() {
                     : 'Sorted by normalized unit price'}
                 </p>
               </div>
-              <div className="space-y-2">
-                {/* Format selector */}
-                <div className="flex items-center gap-2" role="group" aria-label="Report format">
-                  <span className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>Format</span>
-                  <button
-                    type="button"
-                    aria-pressed={reportFormat === 'markdown'}
-                    onClick={() => setReportFormat('markdown')}
-                    className="rounded px-2 py-1 text-[11px] border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--bg-base)]"
-                    style={
-                      reportFormat === 'markdown'
-                        ? { borderColor: 'var(--brand-border)', background: 'rgba(124,92,252,0.08)', color: 'var(--brand-hover)' }
-                        : { borderColor: 'rgba(255,255,255,0.08)', background: 'var(--bg-elevated)', color: 'var(--text-disabled)' }
-                    }
-                  >
-                    Markdown (.md)
-                  </button>
-                  <button
-                    type="button"
-                    aria-pressed={reportFormat === 'html'}
-                    onClick={() => setReportFormat('html')}
-                    className="rounded px-2 py-1 text-[11px] border disabled:opacity-40 disabled:cursor-not-allowed"
-                    style={
-                      reportFormat === 'html'
-                        ? { borderColor: 'var(--brand-border)', background: 'rgba(124,92,252,0.08)', color: 'var(--brand-hover)' }
-                        : { borderColor: 'rgba(255,255,255,0.08)', background: 'var(--bg-elevated)', color: 'var(--text-disabled)' }
-                    }
-                  >
-                    HTML (.html)
-                  </button>
-                  <button
-                    type="button"
-                    aria-pressed={reportFormat === 'pdf'}
-                    onClick={() => setReportFormat('pdf')}
-                    className="rounded px-2 py-1 text-[11px] border disabled:opacity-40 disabled:cursor-not-allowed"
-                    style={
-                      reportFormat === 'pdf'
-                        ? { borderColor: 'var(--brand-border)', background: 'rgba(124,92,252,0.08)', color: 'var(--brand-hover)' }
-                        : { borderColor: 'rgba(255,255,255,0.08)', background: 'var(--bg-elevated)', color: 'var(--text-disabled)' }
-                    }
-                  >
-                    PDF (.pdf)
-                  </button>
-                </div>
-
-                {/* Generate + Download */}
-                <div className="flex items-center gap-2 flex-wrap">
-                  <button
-                    type="button"
-                    onClick={() => void handleGenerateReport(false)}
-                    disabled={reportLoading}
-                    className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs transition-colors disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--bg-base)]"
-                    style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)', background: 'var(--bg-elevated)' }}
-                  >
-                    {reportLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-                    {reportLoading ? 'Generating…' : 'Generate Report'}
-                  </button>
-                  <button
-                    type="button"
-                    aria-label="Download report file"
-                    onClick={() => void handleGenerateReport(true)}
-                    disabled={reportLoading || (!reportData && !hasResults)}
-                    className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs transition-colors disabled:opacity-60 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--bg-base)]"
-                    style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)', background: 'var(--bg-elevated)' }}
-                  >
-                    {reportLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-                    {reportLoading ? 'Working…' : `Download .${reportFormat === 'markdown' ? 'md' : reportFormat}`}
-                  </button>
-                  {reportData && reportData.csv_exports && (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => downloadCsvFromReport(reportData, 'ranked_results.csv')}
-                        className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--bg-base)]"
-                        style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)', background: 'var(--bg-elevated)' }}
-                        disabled={!reportData.csv_exports['ranked_results.csv']}
-                      >
-                        Download ranked_results.csv
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => downloadCsvFromReport(reportData, 'provider_diagnostics.csv')}
-                        className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--bg-base)]"
-                        style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)', background: 'var(--bg-elevated)' }}
-                        disabled={!reportData.csv_exports['provider_diagnostics.csv']}
-                      >
-                        Download provider_diagnostics.csv
-                      </button>
-                    </>
-                  )}
-                  {downloadSuccess && (
-                    <span className="text-[11px]" style={{ color: '#22c55e' }} aria-live="polite">
-                      ✓ Downloaded
-                    </span>
-                  )}
-                </div>
-
-                {reportError && (
-                  <p className="text-xs" style={{ color: 'var(--danger)' }}>
-                    {reportError}
-                  </p>
-                )}
-              </div>
+              <p className="text-[11px]" style={{ color: 'var(--text-disabled)' }}>
+                Demo flow shows one ranking table, one cost chart, and explainability diagnostics.
+              </p>
 
               {isLLM ? (
                 <ResultsTable
@@ -533,133 +433,6 @@ export function OptimizePage() {
                   warnings={catalogResult?.warnings ?? []}
                   excludedCount={catalogResult?.excluded_count ?? 0}
                 />
-              )}
-
-              {/* Scaling planner card — appears after results, non-blocking */}
-              {scalingLoading && !scalingData && (
-                <div
-                  className="rounded-lg border animate-pulse"
-                  style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-elevated)', height: 112 }}
-                  aria-label="Loading scaling recommendation…"
-                />
-              )}
-              {!scalingLoading && scalingError && (
-                <p className="text-[11px]" style={{ color: 'var(--text-disabled)' }}>
-                  ⚠ Scaling estimate unavailable: {scalingError}
-                </p>
-              )}
-              {scalingData && <ScalingSummaryCard data={scalingData} />}
-
-              {reportData && (
-                <div
-                  className="rounded-lg border p-4 space-y-3"
-                  style={{ borderColor: 'var(--border-default)', background: 'var(--bg-elevated)' }}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <div>
-                      <div className="eyebrow mb-1">Report Preview</div>
-                      <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
-                        {reportData.title}
-                      </h3>
-                      <p className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
-                        Generated at {new Date(reportData.generated_at_utc).toLocaleString()}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                    <div className="rounded border p-2" style={{ borderColor: 'var(--border-subtle)' }}>
-                      <div className="micro-label mb-1">Mode</div>
-                      <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>{reportData.mode}</div>
-                    </div>
-                    <div className="rounded border p-2" style={{ borderColor: 'var(--border-subtle)' }}>
-                      <div className="micro-label mb-1">Catalog Rows</div>
-                      <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                        {String(reportData.metadata?.catalog_row_count ?? 'n/a')}
-                      </div>
-                    </div>
-                    <div className="rounded border p-2" style={{ borderColor: 'var(--border-subtle)' }}>
-                      <div className="micro-label mb-1">Providers Synced</div>
-                      <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                        {String(reportData.metadata?.catalog_providers_synced_count ?? 'n/a')}
-                      </div>
-                    </div>
-                    <div className="rounded border p-2" style={{ borderColor: 'var(--border-subtle)' }}>
-                      <div className="micro-label mb-1">Schema</div>
-                      <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                        {String(reportData.metadata?.catalog_schema_version ?? 'n/a')}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Chart data availability */}
-                  <div>
-                    <div className="micro-label mb-1.5">Chart data</div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="rounded border p-2" style={{ borderColor: 'var(--border-subtle)' }}>
-                        <div className="micro-label mb-0.5">Cost by rank</div>
-                        <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                          {costByRankCount !== null ? `${costByRankCount} entries` : 'n/a'}
-                        </div>
-                      </div>
-                      {isLLM ? (
-                        <div className="rounded border p-2" style={{ borderColor: 'var(--border-subtle)' }}>
-                          <div className="micro-label mb-0.5">Risk breakdown</div>
-                          <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                            {riskBreakdownCount !== null ? `${riskBreakdownCount} entries` : 'n/a'}
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="rounded border p-2" style={{ borderColor: 'var(--border-subtle)' }}>
-                          <div className="micro-label mb-0.5">Exclusion breakdown</div>
-                          <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                            {exclusionKeys !== null ? `${exclusionKeys} keys` : 'n/a'}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {Array.isArray(reportData.sections) && reportData.sections.length > 0 && (
-                    <div className="space-y-2">
-                      {reportData.sections
-                        // Suppress "Scaling Summary" when ScalingSummaryCard is already shown
-                        .filter((s) => !(scalingData && s.title === 'Scaling Summary'))
-                        .map((section) => (
-                          <div key={section.title}>
-                            <div className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>
-                              {section.title}
-                            </div>
-                            <ul className="mt-1 space-y-1">
-                              {section.bullets.map((bullet) => (
-                                <li key={bullet} className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
-                                  • {bullet}
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        ))}
-                    </div>
-                  )}
-                  {reportData.narrative && (
-                    <div>
-                      <div className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>
-                        Narrative
-                      </div>
-                      <p className="mt-1 text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
-                        {reportData.narrative}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Report charts — rendered when backend populates charts[] */}
-              {reportData?.charts && reportData.charts.length > 0 && (
-                <div>
-                  <div className="micro-label mb-2">Chart Insights</div>
-                  <ReportCharts charts={reportData.charts} />
-                </div>
               )}
             </div>
           )}

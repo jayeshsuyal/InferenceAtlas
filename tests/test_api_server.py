@@ -31,6 +31,42 @@ def test_catalog_browse_endpoint() -> None:
     assert all(row["workload_type"] == "llm" for row in body["rows"])
 
 
+def test_quality_catalog_endpoint() -> None:
+    client = _client()
+    response = client.get("/api/v1/quality/catalog", params={"workload_type": "llm"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] >= 1
+    assert "mapped_count" in body
+    assert "unmapped_count" in body
+    assert all(row["workload_type"] == "llm" for row in body["rows"])
+    assert "quality_mapped" in body["rows"][0]
+
+
+def test_quality_catalog_endpoint_mapped_only() -> None:
+    client = _client()
+    response = client.get(
+        "/api/v1/quality/catalog",
+        params={"workload_type": "llm", "mapped_only": "true"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] >= 1
+    assert all(row["quality_mapped"] for row in body["rows"])
+
+
+def test_quality_insights_endpoint() -> None:
+    client = _client()
+    response = client.get("/api/v1/quality/insights", params={"workload_type": "llm"})
+    assert response.status_code == 200
+    body = response.json()
+    assert "points" in body
+    assert "frontier_count" in body
+    assert body["total_points"] >= 1
+    assert body["frontier_count"] >= 1
+    assert "is_pareto_frontier" in body["points"][0]
+
+
 def test_rank_catalog_endpoint_includes_relaxation_fields() -> None:
     client = _client()
     payload = {

@@ -51,7 +51,7 @@ function LLMResultCard({ plan, isFirst, index }: { plan: RankedPlan; isFirst: bo
             }),
       }}
       className={cn(
-        'relative rounded-lg border overflow-hidden transition-all duration-200 animate-enter',
+        'relative rounded-xl border overflow-hidden transition-all duration-200 animate-enter',
         'hover:-translate-y-px',
         !isFirst && 'hover:border-white/[0.11]'
       )}
@@ -195,7 +195,7 @@ function NonLLMResultRow({ offer, isFirst, index }: { offer: RankedCatalogOffer;
             }),
       }}
       className={cn(
-        'relative flex items-center gap-4 px-4 py-3.5 rounded-lg border overflow-hidden',
+        'relative flex items-center gap-4 px-4 py-3.5 rounded-xl border overflow-hidden',
         'transition-all duration-200 animate-enter hover:-translate-y-px',
         !isFirst && 'hover:border-white/[0.11]'
       )}

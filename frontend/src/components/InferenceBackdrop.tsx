@@ -23,8 +23,8 @@ interface Pulse {
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
-const NODE_COUNT     = 44
-const CONNECT_DIST   = 168    // px — max edge length
+const NODE_COUNT     = 52
+const CONNECT_DIST   = 176    // px — max edge length
 const PULSE_INTERVAL = 650    // ms between regular auto-spawns
 const BURST_INTERVAL = 6200   // ms between forward-pass bursts
 const BURST_COUNT    = 5      // pulses per burst
@@ -38,20 +38,20 @@ const LAYER_CONFIG = [
 ] as const
 
 // Global opacity ceiling (keeps it a whisper, not a shout)
-const EDGE_BASE_ALPHA  = 0.026
-const EDGE_GLOW_ALPHA  = 0.11   // active edge (pulse traveling along it)
-const NODE_BASE_ALPHA  = 0.060
+const EDGE_BASE_ALPHA  = 0.022
+const EDGE_GLOW_ALPHA  = 0.13   // active edge (pulse traveling along it)
+const NODE_BASE_ALPHA  = 0.056
 const PULSE_ALPHA      = 0.58
 const RING_ALPHA       = 0.24
 const RING_DECAY_MS    = 950
 const BREATHE_AMP      = 0.45   // ± px radius oscillation
 const BREATHE_SPEED    = 0.0008 // radians/ms
 
-// Brand purple palette
-const C_EDGE  = [100,  75, 240] as const
-const C_NODE  = [130, 100, 255] as const
-const C_PULSE = [168, 142, 255] as const
-const C_RING  = [124,  92, 252] as const
+// Inference cyan palette
+const C_EDGE  = [14,  165, 233] as const
+const C_NODE  = [153, 246, 228] as const
+const C_PULSE = [45,  212, 191] as const
+const C_RING  = [34,  211, 238] as const
 
 function rgba([r, g, b]: readonly [number, number, number], a: number) {
   return `rgba(${r},${g},${b},${Math.max(0, a).toFixed(4)})`

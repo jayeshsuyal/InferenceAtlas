@@ -19,9 +19,14 @@ from inference_atlas.api_models import (
     AIAssistRequest,
     AIAssistResponse,
     CatalogBrowseResponse,
+    QualityCatalogResponse,
+    QualityCatalogRow,
+    QualityInsightPoint,
+    QualityInsightsResponse,
     CatalogRankingRequest,
     CatalogRankingResponse,
     CostAuditDataGap,
+    CostAuditAlternative,
     CostAuditLegAudit,
     CostAuditHardwareRecommendation,
     CostAuditPricingVerdict,
@@ -57,6 +62,7 @@ from inference_atlas.invoice_analyzer import analyze_invoice_csv
 from inference_atlas.llm.router import LLMRouter
 from inference_atlas.llm.schema import WorkloadSpec
 from inference_atlas.mvp_planner import get_provider_compatibility, rank_configs
+from inference_atlas.quality_metrics import get_quality_scores_for_workload
 
 
 EXCLUSION_REASON_LABELS: dict[str, str] = {
@@ -319,6 +325,145 @@ def run_browse_catalog(
     return CatalogBrowseResponse(rows=payload_rows, total=len(payload_rows))
 
 
+def run_quality_catalog(
+    workload_type: str | None = None,
+    provider: str | None = None,
+    model_key_query: str | None = None,
+    mapped_only: bool = False,
+) -> QualityCatalogResponse:
+    scored = get_quality_scores_for_workload(workload_type=workload_type)
+    query = (model_key_query or "").strip().lower()
+    payload_rows: list[QualityCatalogRow] = []
+    mapped_count = 0
+
+    for row, quality in scored:
+        if provider is not None and row.provider != provider:
+            continue
+        if query and query not in row.model_key.lower() and query not in row.sku_name.lower():
+            continue
+        if mapped_only and quality is None:
+            continue
+
+        quality_mapped = quality is not None
+        if quality_mapped:
+            mapped_count += 1
+
+        payload_rows.append(
+            QualityCatalogRow(
+                provider=row.provider,
+                workload_type=row.workload_type,
+                model_key=row.model_key,
+                sku_name=row.sku_name,
+                billing_mode=row.billing_mode,
+                unit_price_usd=row.unit_price_usd,
+                unit_name=row.unit_name,
+                quality_mapped=quality_mapped,
+                quality_model_id=(quality.model_id if quality else None),
+                quality_score_0_100=(quality.normalized_score if quality else None),
+                quality_score_adjusted_0_100=(quality.adjusted_score if quality else None),
+                quality_confidence=(quality.confidence if quality else None),
+                quality_confidence_weight=(quality.confidence_weight if quality else None),
+                quality_matched_by=(quality.matched_by if quality else None),
+            )
+        )
+
+    payload_rows.sort(
+        key=lambda r: (
+            0 if r.quality_mapped else 1,
+            -(r.quality_score_adjusted_0_100 or -1.0),
+            r.unit_price_usd,
+            r.provider,
+            r.model_key,
+        )
+    )
+    total = len(payload_rows)
+    return QualityCatalogResponse(
+        rows=payload_rows,
+        total=total,
+        mapped_count=mapped_count,
+        unmapped_count=max(0, total - mapped_count),
+    )
+
+
+def _compute_pareto_frontier_flags(points: list[QualityInsightPoint]) -> list[bool]:
+    """Pareto frontier for minimizing price and maximizing quality."""
+    flags = [True] * len(points)
+    for i, p in enumerate(points):
+        for j, q in enumerate(points):
+            if i == j:
+                continue
+            price_better_or_equal = q.unit_price_usd <= p.unit_price_usd
+            quality_better_or_equal = q.quality_score_adjusted_0_100 >= p.quality_score_adjusted_0_100
+            strictly_better = (
+                q.unit_price_usd < p.unit_price_usd
+                or q.quality_score_adjusted_0_100 > p.quality_score_adjusted_0_100
+            )
+            if price_better_or_equal and quality_better_or_equal and strictly_better:
+                flags[i] = False
+                break
+    return flags
+
+
+def run_quality_insights(
+    workload_type: str | None = None,
+    provider: str | None = None,
+    model_key_query: str | None = None,
+    mapped_only: bool = True,
+) -> QualityInsightsResponse:
+    catalog = run_quality_catalog(
+        workload_type=workload_type,
+        provider=provider,
+        model_key_query=model_key_query,
+        mapped_only=mapped_only,
+    )
+    points: list[QualityInsightPoint] = []
+    for row in catalog.rows:
+        if not row.quality_mapped:
+            continue
+        adjusted = row.quality_score_adjusted_0_100
+        confidence = row.quality_confidence
+        if adjusted is None or confidence is None:
+            continue
+        points.append(
+            QualityInsightPoint(
+                provider=row.provider,
+                workload_type=row.workload_type,
+                model_key=row.model_key,
+                sku_name=row.sku_name,
+                unit_name=row.unit_name,
+                unit_price_usd=row.unit_price_usd,
+                quality_score_adjusted_0_100=adjusted,
+                quality_confidence=confidence,
+                is_pareto_frontier=False,
+            )
+        )
+
+    if points:
+        flags = _compute_pareto_frontier_flags(points)
+        points = [
+            p.model_copy(update={"is_pareto_frontier": flags[idx]})
+            for idx, p in enumerate(points)
+        ]
+        points.sort(
+            key=lambda p: (
+                0 if p.is_pareto_frontier else 1,
+                p.unit_price_usd,
+                -p.quality_score_adjusted_0_100,
+                p.provider,
+                p.model_key,
+            )
+        )
+
+    frontier_count = sum(1 for p in points if p.is_pareto_frontier)
+    return QualityInsightsResponse(
+        points=points,
+        total_points=len(points),
+        frontier_count=frontier_count,
+        mapped_count=catalog.mapped_count,
+        unmapped_count=catalog.unmapped_count,
+    )
+
+
 def run_invoice_analyze(file_bytes: bytes) -> InvoiceAnalysisResponse:
     rows = get_catalog_v2_rows()
     suggestions, _summary = analyze_invoice_csv(file_bytes, rows)
@@ -511,6 +656,8 @@ def _load_gpu_pricing_rows() -> list[dict[str, str]]:
                             "workload_type": workload_type,
                             "billing_mode": billing_mode,
                             "price_per_gpu_hour_usd": f"{price:.10f}",
+                            "throughput_value": (row.get("throughput_value") or "").strip(),
+                            "throughput_unit": (row.get("throughput_unit") or "").strip().lower(),
                             "confidence": (row.get("confidence") or "").strip().lower(),
                             "source_url": (row.get("source_url") or "").strip(),
                         }
@@ -635,6 +782,222 @@ def _estimate_dedicated_gpu_monthly_cost(
     )
 
 
+def _cost_audit_confidence_label(token: str | None) -> str:
+    value = (token or "").strip().lower()
+    if value in {"official", "high"}:
+        return "high"
+    if value in {"medium", "estimated"}:
+        return "medium"
+    return "low"
+
+
+def _cost_audit_deployment_mode_from_billing(billing_mode: str | None) -> str:
+    token = (billing_mode or "").strip().lower()
+    if token == "dedicated_hourly":
+        return "dedicated"
+    if token == "autoscale_hourly":
+        return "autoscale"
+    return "serverless"
+
+
+def _estimate_required_gpus_for_audit(payload: CostAuditRequest) -> int:
+    if payload.gpu_count is not None and payload.gpu_count > 0:
+        return int(payload.gpu_count)
+    total_tokens = float(payload.monthly_input_tokens or 0.0) + float(payload.monthly_output_tokens or 0.0)
+    if total_tokens >= 5_000_000_000:
+        return 8
+    if total_tokens >= 2_000_000_000:
+        return 4
+    if total_tokens >= 500_000_000:
+        return 2
+    return 1
+
+
+def _audit_peak_multiplier(traffic_pattern: str) -> float:
+    return {
+        "steady": 1.5,
+        "business_hours": 2.5,
+        "bursty": 4.0,
+        "batch_offline": 2.0,
+    }.get(traffic_pattern, 2.5)
+
+
+def _throughput_per_gpu_peak_unit(
+    throughput_value: str | None,
+    throughput_unit: str | None,
+    workload_type: str,
+) -> float | None:
+    if not throughput_value:
+        return None
+    try:
+        value = float(throughput_value)
+    except (TypeError, ValueError):
+        return None
+    if value <= 0:
+        return None
+    unit = (throughput_unit or "").strip().lower()
+    if workload_type == "llm":
+        # target unit: tokens_per_second
+        if unit == "tokens_per_second":
+            return value
+        if unit == "tokens_per_minute":
+            return value / 60.0
+        if unit == "tokens_per_hour":
+            return value / 3600.0
+        return None
+    if workload_type == "speech_to_text":
+        # target unit: audio_min_per_minute
+        if unit == "audio_min_per_minute":
+            return value
+        if unit == "audio_hour_per_hour":
+            return value * 60.0 / 60.0
+        if unit == "audio_min_per_second":
+            return value * 60.0
+        return None
+    return None
+
+
+def _estimate_required_gpus_from_throughput(
+    payload: CostAuditRequest,
+    workload_type: str,
+    throughput_per_gpu: float | None,
+) -> int | None:
+    if throughput_per_gpu is None or throughput_per_gpu <= 0:
+        return None
+    util_target = 0.75
+    peak_multiplier = _audit_peak_multiplier(payload.traffic_pattern)
+
+    if workload_type == "llm":
+        total_tokens_month = float(payload.monthly_input_tokens or 0.0) + float(payload.monthly_output_tokens or 0.0)
+        if total_tokens_month <= 0:
+            return None
+        avg_tokens_per_sec = total_tokens_month / (30.0 * 24.0 * 3600.0)
+        peak_tokens_per_sec = avg_tokens_per_sec * peak_multiplier
+        return max(1, int((peak_tokens_per_sec / max(throughput_per_gpu * util_target, 1e-9)) + 0.999999))
+
+    if workload_type == "speech_to_text":
+        # As audit payload does not yet include explicit audio-min fields, treat monthly_input_tokens
+        # as workload volume proxy for STT until dedicated audio fields land.
+        monthly_audio_min_proxy = float(payload.monthly_input_tokens or 0.0)
+        if monthly_audio_min_proxy <= 0:
+            return None
+        avg_audio_min_per_min = monthly_audio_min_proxy / (30.0 * 24.0 * 60.0)
+        peak_audio_min_per_min = avg_audio_min_per_min * peak_multiplier
+        return max(1, int((peak_audio_min_per_min / max(throughput_per_gpu * util_target, 1e-9)) + 0.999999))
+
+    return None
+
+
+def _build_cost_audit_recommended_options(
+    payload: CostAuditRequest,
+    current_spend: float,
+) -> list[CostAuditAlternative]:
+    """Build top alternatives from GPU pricing CSVs (+ current serverless baseline)."""
+    if payload.modality not in {"llm", "asr"}:
+        return []
+
+    alternatives: list[CostAuditAlternative] = []
+    if payload.pricing_model == "token_api" and current_spend > 0:
+        alternatives.append(
+            CostAuditAlternative(
+                provider="current_stack",
+                gpu_type=None,
+                deployment_mode="serverless",
+                estimated_monthly_cost_usd=round(current_spend, 2),
+                savings_vs_current_usd=0.0,
+                savings_vs_current_pct=0.0,
+                confidence="high",
+                source="current_baseline",
+                rationale="Baseline from provided monthly AI spend using current token-API/serverless setup.",
+            )
+        )
+
+    rows = _load_gpu_pricing_rows()
+    if not rows:
+        return alternatives
+
+    workload_type = _modality_to_workload_type(payload.modality)
+    selected_providers = {_canonical_gpu_provider(p) for p in payload.providers if p}
+    procurement_factor = PROCUREMENT_DISCOUNT_FACTOR.get(payload.gpu_procurement_type, 1.0)
+    heuristic_required_gpus = _estimate_required_gpus_for_audit(payload)
+
+    ranked: list[tuple[float, CostAuditAlternative]] = []
+    for row in rows:
+        provider = row.get("provider") or ""
+        if selected_providers and provider not in selected_providers:
+            continue
+        if (row.get("workload_type") or "").strip().lower() != workload_type:
+            continue
+        try:
+            hourly = float(row["price_per_gpu_hour_usd"])
+        except (TypeError, ValueError):
+            continue
+        if hourly <= 0:
+            continue
+
+        throughput_per_gpu = _throughput_per_gpu_peak_unit(
+            row.get("throughput_value"),
+            row.get("throughput_unit"),
+            workload_type,
+        )
+        throughput_required = _estimate_required_gpus_from_throughput(
+            payload=payload,
+            workload_type=workload_type,
+            throughput_per_gpu=throughput_per_gpu,
+        )
+        required_gpus = throughput_required or heuristic_required_gpus
+
+        effective_hourly = hourly * procurement_factor
+        monthly_cost = required_gpus * effective_hourly * 730.0
+        savings_usd = max(0.0, current_spend - monthly_cost) if current_spend > 0 else 0.0
+        savings_pct = (savings_usd / current_spend * 100.0) if current_spend > 0 else 0.0
+        deployment_mode = _cost_audit_deployment_mode_from_billing(row.get("billing_mode"))
+        confidence = _cost_audit_confidence_label(row.get("confidence"))
+        gpu_type = (row.get("gpu_type") or "").strip().upper() or None
+        source_url = row.get("source_url") or "provider CSV"
+        if throughput_required is not None:
+            rationale = (
+                f"{required_gpus}x {gpu_type or 'GPU'} sized from throughput metadata "
+                f"({row.get('throughput_value')} {row.get('throughput_unit')}); "
+                f"{deployment_mode} mode priced from {source_url}."
+            )
+        else:
+            rationale = (
+                f"{required_gpus}x {gpu_type or 'GPU'} estimated from workload volume; "
+                f"{deployment_mode} mode priced from {source_url}."
+            )
+
+        ranked.append(
+            (
+                monthly_cost,
+                CostAuditAlternative(
+                    provider=provider,
+                    gpu_type=gpu_type,
+                    deployment_mode=deployment_mode,  # type: ignore[arg-type]
+                    estimated_monthly_cost_usd=round(monthly_cost, 2),
+                    savings_vs_current_usd=round(savings_usd, 2),
+                    savings_vs_current_pct=round(savings_pct, 2),
+                    confidence=confidence,  # type: ignore[arg-type]
+                    source="provider_csv",
+                    rationale=rationale,
+                ),
+            )
+        )
+
+    ranked.sort(key=lambda item: item[0])
+    seen_keys: set[tuple[str, str | None, str]] = set()
+    for _, option in ranked:
+        key = (option.provider, option.gpu_type, option.deployment_mode)
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        alternatives.append(option)
+        if len(alternatives) >= 4:
+            break
+
+    return alternatives
+
+
 def _gap(field: str, impact: str, why: str) -> CostAuditDataGap:
     return CostAuditDataGap(field=field, impact=impact, why_it_matters=why)
 
@@ -736,7 +1099,9 @@ def run_cost_audit(payload: CostAuditRequest, _allow_mixed_split: bool = True) -
         penalty_points += 16
         score -= 16
         major_flags += 1
-        red_flags.append("Steady traffic on on-demand GPUs suggests avoidable reservation waste.")
+        red_flags.append(
+            "traffic_pattern='steady' with gpu_procurement_type='on_demand' suggests avoidable reservation waste."
+        )
         if float(payload.monthly_ai_spend_usd or 0.0) <= 0 and payload.pricing_model != "token_api":
             (
                 _estimated_dedicated_spend,
@@ -768,7 +1133,9 @@ def run_cost_audit(payload: CostAuditRequest, _allow_mixed_split: bool = True) -
         penalty_points += 12
         score -= 12
         major_flags += 1
-        red_flags.append("No autoscaling for non-steady traffic can create idle spend.")
+        red_flags.append(
+            f"autoscaling='no' with traffic_pattern='{payload.traffic_pattern}' can create idle spend."
+        )
         recommendations.append(
             CostAuditRecommendation(
                 recommendation_type="autoscaling",
@@ -1072,6 +1439,16 @@ def run_cost_audit(payload: CostAuditRequest, _allow_mixed_split: bool = True) -
             data_gaps_sorted = [g for g in data_gaps_sorted if g.field != "per_modality_usage_breakdown"]
             assumptions.append("Mixed workload score/savings aggregated from per-leg mini-audits.")
 
+    expose_gpu_pricing_source = (
+        payload.pricing_model != "token_api"
+        or verdict == "consider_switch"
+    )
+
+    recommended_options = _build_cost_audit_recommended_options(
+        payload=payload,
+        current_spend=current_spend,
+    )
+
     return CostAuditResponse(
         efficiency_score=score,
         recommendations=recommendations_sorted,
@@ -1086,9 +1463,9 @@ def run_cost_audit(payload: CostAuditRequest, _allow_mixed_split: bool = True) -
             verdict=verdict,
             reason=reason,
         ),
-        pricing_source=pricing_source,
-        pricing_source_provider=pricing_source_provider,
-        pricing_source_gpu=pricing_source_gpu,
+        pricing_source=pricing_source if expose_gpu_pricing_source else "unknown",
+        pricing_source_provider=pricing_source_provider if expose_gpu_pricing_source else None,
+        pricing_source_gpu=pricing_source_gpu if expose_gpu_pricing_source else None,
         red_flags=red_flags,
         estimated_monthly_savings=CostAuditSavingsEstimate(
             low_usd=round(low_savings, 2),
@@ -1113,6 +1490,7 @@ def run_cost_audit(payload: CostAuditRequest, _allow_mixed_split: bool = True) -
         assumptions=assumptions,
         data_gaps=[gap.field for gap in data_gaps_sorted],
         data_gaps_detailed=data_gaps_sorted,
+        recommended_options=recommended_options,
     )
 
 
@@ -1188,6 +1566,62 @@ def _catalog_report_sections(response: CatalogRankingResponse) -> list[ReportSec
             bullets=[
                 f"Excluded offers count: {response.excluded_count}.",
                 *response.warnings[:4],
+            ],
+        ),
+    ]
+
+
+def _audit_report_sections(response: CostAuditResponse) -> list[ReportSection]:
+    return [
+        ReportSection(
+            title="Executive Summary",
+            bullets=[
+                f"Efficiency score: {response.efficiency_score}/100.",
+                (
+                    "Pricing verdict: "
+                    f"{response.pricing_model_verdict.verdict.replace('_', ' ')} "
+                    f"({response.pricing_model_verdict.current_model})."
+                ),
+                (
+                    "Estimated monthly savings range: "
+                    f"{_format_money(response.estimated_monthly_savings.low_usd)} to "
+                    f"{_format_money(response.estimated_monthly_savings.high_usd)}."
+                ),
+            ],
+        ),
+        ReportSection(
+            title="Top Recommendations",
+            bullets=[
+                (
+                    f"{rec.title} · {rec.priority} priority · "
+                    f"estimated {rec.estimated_savings_pct:.1f}% savings"
+                )
+                for rec in response.recommendations[:5]
+            ]
+            or ["No recommendations returned."],
+        ),
+        ReportSection(
+            title="Alternative Deployment Options",
+            bullets=[
+                (
+                    f"{opt.provider} · {opt.deployment_mode}"
+                    f"{f' · {opt.gpu_type}' if opt.gpu_type else ''} · "
+                    f"{_format_money(opt.estimated_monthly_cost_usd)} / month · "
+                    f"save {_format_money(opt.savings_vs_current_usd)} "
+                    f"({opt.savings_vs_current_pct:.1f}%)."
+                )
+                for opt in response.recommended_options[:5]
+            ]
+            or ["No alternative options returned."],
+        ),
+        ReportSection(
+            title="Explainability",
+            bullets=[
+                f"Penalty points: {response.score_breakdown.penalty_points}.",
+                f"Bonus points: {response.score_breakdown.bonus_points}.",
+                f"Major flags: {response.score_breakdown.major_flags}.",
+                *[f"Red flag: {flag}" for flag in response.red_flags[:3]],
+                *[f"Data gap: {gap}" for gap in response.data_gaps[:3]],
             ],
         ),
     ]
@@ -1325,12 +1759,19 @@ def _build_report_narrative(
             f"This result is grounded to the current run payload and catalog snapshot. "
             f"Returned plans: {len(top_cost)}; top-plan risk={risk_lead if risk_lead is not None else 'n/a'}."
         )
-    top_cost = chart_data.get("cost_by_rank", [])
-    trace = chart_data.get("relaxation_trace", [])
+    if mode == "catalog":
+        top_cost = chart_data.get("cost_by_rank", [])
+        trace = chart_data.get("relaxation_trace", [])
+        return (
+            f"Primary recommendation: {summary_bullet} "
+            f"This ranking uses current catalog rows only; fallback steps attempted={len(trace)}; "
+            f"offers returned={len(top_cost)}."
+        )
+    alternatives = chart_data.get("cost_by_option", [])
     return (
         f"Primary recommendation: {summary_bullet} "
-        f"This ranking uses current catalog rows only; fallback steps attempted={len(trace)}; "
-        f"offers returned={len(top_cost)}."
+        "This audit is grounded to deterministic score math and recommendation logic. "
+        f"Alternative options returned={len(alternatives)}."
     )
 
 
@@ -1340,13 +1781,17 @@ def _build_llm_generated_report_narrative(
     chart_data: dict[str, Any],
 ) -> str | None:
     # Keep LLM narrative optional and fail-safe.
-    if mode != "llm":
+    if mode not in {"llm", "audit"}:
         return None
     if not (os.getenv("OPENAI_API_KEY") or os.getenv("ANTHROPIC_API_KEY")):
         return None
     try:
         router = LLMRouter()
-        top_cost_rows = chart_data.get("cost_by_rank", [])
+        top_cost_rows = (
+            chart_data.get("cost_by_rank", [])
+            if mode == "llm"
+            else chart_data.get("cost_by_option", [])
+        )
         top_summary = ""
         if isinstance(top_cost_rows, list) and top_cost_rows:
             top = top_cost_rows[0]
@@ -1555,34 +2000,64 @@ def _build_report_csv_exports(payload: ReportGenerateRequest) -> dict[str, str]:
             "ranked_results.csv": _rows_to_csv_text(plans_rows),
             "provider_diagnostics.csv": _rows_to_csv_text(diagnostics_rows),
         }
-
-    assert payload.catalog_ranking is not None
-    offer_rows = [
-        {
-            "rank": offer.rank,
-            "provider": offer.provider,
-            "sku_name": offer.sku_name,
-            "billing_mode": offer.billing_mode,
-            "unit_name": offer.unit_name,
-            "unit_price_usd": offer.unit_price_usd,
-            "normalized_price": offer.normalized_price,
-            "monthly_estimate_usd": offer.monthly_estimate_usd,
-            "confidence": offer.confidence,
-            "required_replicas": offer.required_replicas,
-            "capacity_check": offer.capacity_check,
-            "previous_unit_price_usd": offer.previous_unit_price_usd,
-            "price_change_abs_usd": offer.price_change_abs_usd,
-            "price_change_pct": offer.price_change_pct,
+    if payload.mode == "catalog":
+        assert payload.catalog_ranking is not None
+        offer_rows = [
+            {
+                "rank": offer.rank,
+                "provider": offer.provider,
+                "sku_name": offer.sku_name,
+                "billing_mode": offer.billing_mode,
+                "unit_name": offer.unit_name,
+                "unit_price_usd": offer.unit_price_usd,
+                "normalized_price": offer.normalized_price,
+                "monthly_estimate_usd": offer.monthly_estimate_usd,
+                "confidence": offer.confidence,
+                "required_replicas": offer.required_replicas,
+                "capacity_check": offer.capacity_check,
+                "previous_unit_price_usd": offer.previous_unit_price_usd,
+                "price_change_abs_usd": offer.price_change_abs_usd,
+                "price_change_pct": offer.price_change_pct,
+            }
+            for offer in payload.catalog_ranking.offers
+        ]
+        diagnostics_rows = [
+            {"provider": d.provider, "status": d.status, "reason": d.reason}
+            for d in payload.catalog_ranking.provider_diagnostics
+        ]
+        return {
+            "ranked_results.csv": _rows_to_csv_text(offer_rows),
+            "provider_diagnostics.csv": _rows_to_csv_text(diagnostics_rows),
         }
-        for offer in payload.catalog_ranking.offers
+
+    assert payload.cost_audit is not None
+    recommendation_rows = [
+        {
+            "recommendation_type": rec.recommendation_type,
+            "title": rec.title,
+            "priority": rec.priority,
+            "estimated_savings_pct": rec.estimated_savings_pct,
+            "rationale": rec.rationale,
+        }
+        for rec in payload.cost_audit.recommendations
     ]
-    diagnostics_rows = [
-        {"provider": d.provider, "status": d.status, "reason": d.reason}
-        for d in payload.catalog_ranking.provider_diagnostics
+    alternatives_rows = [
+        {
+            "provider": opt.provider,
+            "gpu_type": opt.gpu_type,
+            "deployment_mode": opt.deployment_mode,
+            "estimated_monthly_cost_usd": opt.estimated_monthly_cost_usd,
+            "savings_vs_current_usd": opt.savings_vs_current_usd,
+            "savings_vs_current_pct": opt.savings_vs_current_pct,
+            "confidence": opt.confidence,
+            "source": opt.source,
+            "rationale": opt.rationale,
+        }
+        for opt in payload.cost_audit.recommended_options
     ]
     return {
-        "ranked_results.csv": _rows_to_csv_text(offer_rows),
-        "provider_diagnostics.csv": _rows_to_csv_text(diagnostics_rows),
+        "recommendations.csv": _rows_to_csv_text(recommendation_rows),
+        "alternatives.csv": _rows_to_csv_text(alternatives_rows),
     }
 
 
@@ -1862,6 +2337,90 @@ def _build_catalog_report_charts(response: CatalogRankingResponse) -> list[Repor
     ]
 
 
+def _build_audit_report_chart_data(response: CostAuditResponse) -> dict[str, Any]:
+    return {
+        "cost_by_option": [
+            {
+                "provider": opt.provider,
+                "gpu_type": opt.gpu_type,
+                "deployment_mode": opt.deployment_mode,
+                "estimated_monthly_cost_usd": opt.estimated_monthly_cost_usd,
+                "savings_vs_current_usd": opt.savings_vs_current_usd,
+                "savings_vs_current_pct": opt.savings_vs_current_pct,
+                "confidence": opt.confidence,
+                "source": opt.source,
+            }
+            for opt in response.recommended_options
+        ],
+        "score_breakdown": {
+            "base_score": response.score_breakdown.base_score,
+            "penalty_points": response.score_breakdown.penalty_points,
+            "bonus_points": response.score_breakdown.bonus_points,
+            "major_flags": response.score_breakdown.major_flags,
+            "pre_cap_score": response.score_breakdown.pre_cap_score,
+            "post_cap_score": response.score_breakdown.post_cap_score,
+            "combined_savings_pct": response.score_breakdown.combined_savings_pct,
+        },
+        "recommendation_mix": dict(
+            Counter(rec.recommendation_type for rec in response.recommendations)
+        ),
+    }
+
+
+def _build_audit_report_charts(response: CostAuditResponse) -> list[ReportChart]:
+    options = sorted(response.recommended_options, key=lambda opt: opt.estimated_monthly_cost_usd)
+    breakdown = response.score_breakdown
+    return [
+        ReportChart(
+            id="cost_comparison",
+            title="Cost Comparison",
+            type="bar",
+            x_label="Option",
+            y_label="Monthly Cost (USD)",
+            series=[
+                ReportChartSeries(
+                    id="monthly_cost_usd",
+                    label="Monthly Cost",
+                    unit="usd",
+                    points=[
+                        {
+                            "rank": idx + 1,
+                            "provider": opt.provider,
+                            "gpu_type": opt.gpu_type,
+                            "deployment_mode": opt.deployment_mode,
+                            "value": opt.estimated_monthly_cost_usd,
+                        }
+                        for idx, opt in enumerate(options[:8])
+                    ],
+                )
+            ],
+            legend=["Monthly Cost"],
+            meta={"sort": "monthly_cost_asc"},
+        ),
+        ReportChart(
+            id="score_drivers",
+            title="Score Drivers",
+            type="bar",
+            x_label="Driver",
+            y_label="Points",
+            series=[
+                ReportChartSeries(
+                    id="score_points",
+                    label="Points",
+                    unit="count",
+                    points=[
+                        {"x": "penalties", "value": breakdown.penalty_points},
+                        {"x": "bonuses", "value": breakdown.bonus_points},
+                        {"x": "major_flags", "value": breakdown.major_flags},
+                    ],
+                )
+            ],
+            legend=["Points"],
+            meta={"post_cap_score": breakdown.post_cap_score},
+        ),
+    ]
+
+
 def run_generate_report(payload: ReportGenerateRequest) -> ReportGenerateResponse:
     generated_at_utc = datetime.now(timezone.utc).isoformat()
     catalog_meta = get_catalog_v2_metadata()
@@ -1874,7 +2433,7 @@ def run_generate_report(payload: ReportGenerateRequest) -> ReportGenerateRespons
         )
         chart_data = _build_llm_report_chart_data(payload.llm_planning)
         charts = _build_llm_report_charts(payload.llm_planning)
-    else:
+    elif payload.mode == "catalog":
         assert payload.catalog_ranking is not None
         sections = _catalog_report_sections(payload.catalog_ranking)
         scaling_summary = run_plan_scaling(
@@ -1882,6 +2441,11 @@ def run_generate_report(payload: ReportGenerateRequest) -> ReportGenerateRespons
         )
         chart_data = _build_catalog_report_chart_data(payload.catalog_ranking)
         charts = _build_catalog_report_charts(payload.catalog_ranking)
+    else:
+        assert payload.cost_audit is not None
+        sections = _audit_report_sections(payload.cost_audit)
+        chart_data = _build_audit_report_chart_data(payload.cost_audit)
+        charts = _build_audit_report_charts(payload.cost_audit)
     if scaling_summary is not None:
         gpu_label = (
             str(scaling_summary.estimated_gpu_count)

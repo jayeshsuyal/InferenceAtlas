@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { BarChart3, BookOpen, Receipt, ShieldCheck, Github, ChevronRight } from 'lucide-react'
+import { BarChart3, ShieldCheck, Github, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { AIAssistantPanel } from './AIAssistantPanel'
 import { Separator } from './ui/separator'
@@ -7,8 +7,6 @@ import { useAIContext } from '@/context/AIContext'
 
 const NAV_ITEMS = [
   { to: '/',        label: 'Optimize Workload', icon: BarChart3,   end: true },
-  { to: '/catalog', label: 'Browse Catalog',    icon: BookOpen },
-  { to: '/invoice', label: 'Invoice Analyzer',  icon: Receipt },
   { to: '/audit',   label: 'Cost Audit',        icon: ShieldCheck },
 ]
 
@@ -20,11 +18,11 @@ export function Sidebar({ className }: SidebarProps) {
   const aiCtx = useAIContext()
   return (
     <aside
-      className={cn('relative flex flex-col h-full border-r border-white/[0.06] sidebar-halo overflow-hidden', className)}
+      className={cn('relative flex flex-col h-full sidebar-halo sidebar-rail overflow-hidden rounded-xl', className)}
       style={{ background: 'var(--bg-surface)' }}
     >
       {/* ── Brand header ── */}
-      <div className="relative z-10 px-4 py-4 border-b border-white/[0.05]">
+      <div className="relative z-10 px-4 py-4 border-b border-white/[0.06]">
         <div className="flex items-center gap-3">
           {/* Logo mark with brand gradient */}
           <div className="relative w-8 h-8 flex-shrink-0">
@@ -63,17 +61,13 @@ export function Sidebar({ className }: SidebarProps) {
             end={end}
             className={({ isActive }) =>
               cn(
-                'group flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 border',
+                'group flex items-center gap-2.5 px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 border sidebar-nav-link',
                 isActive
-                  ? 'border-[rgba(124,92,252,0.28)] text-[#c4b5fd]'
-                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/[0.04] border-transparent'
+                  ? 'sidebar-nav-link-active text-[#d6fbff]'
+                  : 'text-zinc-400 hover:text-zinc-200 border-transparent'
               )
             }
-            style={({ isActive }) =>
-              isActive
-                ? { background: 'rgba(124,92,252,0.10)', boxShadow: 'var(--shadow-glow-sm)' }
-                : {}
-            }
+            style={() => ({})}
           >
             {({ isActive }) => (
               <>

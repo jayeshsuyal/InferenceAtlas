@@ -19,17 +19,16 @@ const config: Config = {
           strong: 'rgba(255,255,255,0.13)',
         },
         brand: {
-          DEFAULT: '#7c5cfc',
-          muted: '#6366f1',
-          hover: '#9b7dfe',
-          dim: 'rgba(124,92,252,0.10)',
-          glow: 'rgba(124,92,252,0.24)',
+          DEFAULT: 'var(--brand)',
+          muted: 'var(--brand-muted)',
+          hover: 'var(--brand-hover)',
+          dim: 'var(--brand-dim)',
+          glow: 'var(--brand-glow)',
         },
       },
       fontFamily: {
-        // Space Grotesk as primary — geometric, technical-premium feel
-        sans: ['Space Grotesk', 'system-ui', '-apple-system', 'sans-serif'],
-        mono: ['JetBrains Mono', 'Fira Code', 'ui-monospace', 'monospace'],
+        sans: ['Sora', 'Avenir Next', 'Segoe UI', 'sans-serif'],
+        mono: ['IBM Plex Mono', 'JetBrains Mono', 'Fira Code', 'ui-monospace', 'monospace'],
       },
       fontSize: {
         '2xs': ['0.625rem', { lineHeight: '0.875rem' }],

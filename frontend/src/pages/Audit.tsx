@@ -1,12 +1,15 @@
 import { useState } from 'react'
 import { ShieldCheck, Loader2 } from 'lucide-react'
-import { auditCost } from '@/services/api'
+import { Link } from 'react-router-dom'
+import { auditCost, downloadReport, generateReport } from '@/services/api'
 import { AuditResultCard } from '@/components/audit/AuditResultCard'
+import { ReportCharts } from '@/components/optimize/ReportCharts'
 import type {
   CostAuditResponse,
   CostAuditModality,
   CostAuditPricingModel,
   CostAuditTrafficPattern,
+  ReportGenerateResponse,
 } from '@/services/types'
 
 // ─── Form state ────────────────────────────────────────────────────────────────
@@ -44,14 +47,8 @@ const DEFAULT_FORM: AuditFormState = {
 // ─── Option lists ──────────────────────────────────────────────────────────────
 
 const MODALITY_OPTIONS: { value: CostAuditModality; label: string }[] = [
-  { value: 'llm',              label: 'LLM' },
-  { value: 'speech_to_text',   label: 'Speech-to-Text' },
-  { value: 'text_to_speech',   label: 'Text-to-Speech' },
-  { value: 'embeddings',       label: 'Embeddings' },
-  { value: 'vision',           label: 'Vision' },
-  { value: 'image_generation', label: 'Image Generation' },
-  { value: 'video_generation', label: 'Video Generation' },
-  { value: 'moderation',       label: 'Moderation' },
+  { value: 'llm',       label: 'LLM' },
+  { value: 'asr',       label: 'Speech-to-Text' },
 ]
 
 const PRICING_MODEL_OPTIONS: { value: CostAuditPricingModel; label: string }[] = [
@@ -81,6 +78,11 @@ export function AuditPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<CostAuditResponse | null>(null)
+  const [activeTab, setActiveTab] = useState<'audit' | 'report'>('audit')
+  const [reportLoading, setReportLoading] = useState(false)
+  const [reportError, setReportError] = useState<string | null>(null)
+  const [reportData, setReportData] = useState<ReportGenerateResponse | null>(null)
+  const [downloadOk, setDownloadOk] = useState(false)
 
   function set<K extends keyof AuditFormState>(key: K, value: AuditFormState[K]) {
     setForm((f) => ({ ...f, [key]: value }))
@@ -106,6 +108,9 @@ export function AuditPage() {
         has_autoscaling:      form.has_autoscaling,
       })
       setResult(res)
+      setActiveTab('audit')
+      setReportData(null)
+      setReportError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Audit failed. Please try again.')
     } finally {
@@ -113,13 +118,75 @@ export function AuditPage() {
     }
   }
 
+  async function handleGenerateReport() {
+    if (!result) return
+    setReportLoading(true)
+    setReportError(null)
+    setDownloadOk(false)
+    try {
+      const report = await generateReport({
+        mode: 'audit',
+        title: 'InferenceAtlas Cost Audit Report',
+        output_format: 'markdown',
+        include_charts: true,
+        include_csv_exports: true,
+        include_narrative: true,
+        cost_audit: result,
+      })
+      setReportData(report)
+    } catch (err) {
+      setReportError(err instanceof Error ? err.message : 'Report generation failed')
+    } finally {
+      setReportLoading(false)
+    }
+  }
+
+  async function handleDownloadReport() {
+    if (!result) return
+    setReportLoading(true)
+    setReportError(null)
+    setDownloadOk(false)
+    try {
+      const file = await downloadReport({
+        mode: 'audit',
+        title: 'InferenceAtlas Cost Audit Report',
+        output_format: 'markdown',
+        include_charts: true,
+        include_csv_exports: true,
+        include_narrative: true,
+        cost_audit: result,
+      })
+      const url = URL.createObjectURL(file.blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = file.filename
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      setDownloadOk(true)
+      setTimeout(() => setDownloadOk(false), 2500)
+    } catch (err) {
+      setReportError(err instanceof Error ? err.message : 'Report download failed')
+    } finally {
+      setReportLoading(false)
+    }
+  }
+
   const isGpu = form.pricing_model !== 'token_api'
+  const compareWorkload = form.modality === 'asr' ? 'speech_to_text' : 'llm'
+  const compareParams = new URLSearchParams()
+  compareParams.set('from', 'audit')
+  compareParams.set('workload', compareWorkload)
+  if (form.tokens_per_day) compareParams.set('tokens_per_day', form.tokens_per_day)
+  if (form.monthly_ai_spend_usd) compareParams.set('monthly_budget', form.monthly_ai_spend_usd)
+  const compareTo = { pathname: '/', search: `?${compareParams.toString()}` }
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-8 sm:px-6">
+    <div className="max-w-5xl mx-auto px-5 py-8 sm:px-8">
       {/* ── Page header ── */}
-      <div className="mb-8 page-section">
-        <div className="eyebrow mb-2 flex items-center gap-1.5">
+      <div className="mb-8 page-section hero-panel p-5 sm:p-6">
+        <div className="headline-kicker mb-2 flex items-center gap-1.5">
           <ShieldCheck className="h-3 w-3" />
           Cost Intelligence
         </div>
@@ -136,7 +203,7 @@ export function AuditPage() {
       {/* ── Form ── */}
       <form onSubmit={handleSubmit} className="page-section section-delay-1 space-y-6">
         <div
-          className="rounded-lg border p-5 space-y-5"
+          className="rounded-xl border p-5 sm:p-6 space-y-5 glass-card-raised"
           style={{ borderColor: 'var(--border-default)', background: 'var(--bg-elevated)' }}
         >
           {/* Row 1 — modality + model name */}
@@ -343,8 +410,98 @@ export function AuditPage() {
 
       {/* ── Result ── */}
       {result && (
-        <div className="mt-8 page-section section-delay-2">
-          <AuditResultCard data={result} />
+        <div className="mt-8 page-section section-delay-2 space-y-3">
+          <div className="flex border-b border-white/[0.06] -mb-px">
+            {[
+              { id: 'audit' as const, label: 'Audit Output' },
+              { id: 'report' as const, label: 'Generate Report' },
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                className="px-4 py-2.5 text-xs font-medium border-b-2 transition-all"
+                style={
+                  activeTab === tab.id
+                    ? { borderColor: 'var(--brand)', color: 'var(--brand-hover)' }
+                    : { borderColor: 'transparent', color: 'var(--text-tertiary)' }
+                }
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {activeTab === 'audit' && (
+            <>
+              <AuditResultCard data={result} />
+              <div className="flex justify-end">
+                <Link
+                  to={compareTo}
+                  state={{
+                    auditRecommendedOptions: result.recommended_options ?? [],
+                    auditModelName: form.model_name.trim() || undefined,
+                  }}
+                  className="rounded-md px-3 py-1.5 text-xs font-medium border transition-colors"
+                  style={{ borderColor: 'var(--brand-border)', background: 'rgba(34,211,238,0.08)', color: 'var(--brand-hover)' }}
+                >
+                  Compare alternatives now
+                </Link>
+              </div>
+            </>
+          )}
+
+          {activeTab === 'report' && (
+            <div className="rounded-xl border p-4 space-y-4" style={{ borderColor: 'var(--border-default)', background: 'var(--bg-elevated)' }}>
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div>
+                  <div className="eyebrow mb-0.5">Report Builder</div>
+                  <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                    Deterministic report + charts, with Opus 4.6 narrative (GPT-5.2 fallback).
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleGenerateReport}
+                    disabled={reportLoading}
+                    className="rounded-md px-3 py-1.5 text-xs font-medium border transition-colors disabled:opacity-50"
+                    style={{ borderColor: 'var(--brand-border)', background: 'rgba(34,211,238,0.08)', color: 'var(--brand-hover)' }}
+                  >
+                    {reportLoading ? 'Generating...' : 'Generate'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDownloadReport}
+                    disabled={reportLoading}
+                    className="rounded-md px-3 py-1.5 text-xs font-medium border transition-colors disabled:opacity-50"
+                    style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)' }}
+                  >
+                    Download .md
+                  </button>
+                </div>
+              </div>
+
+              {downloadOk && (
+                <p className="text-xs" style={{ color: 'var(--success)' }}>Downloaded report.</p>
+              )}
+              {reportError && (
+                <p className="text-xs" style={{ color: 'var(--danger-text)' }}>{reportError}</p>
+              )}
+
+              {reportData && (
+                <div className="space-y-4">
+                  <div className="rounded-lg border p-3" style={{ borderColor: 'var(--border-default)' }}>
+                    <div className="micro-label mb-1">Narrative</div>
+                    <p className="text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+                      {reportData.narrative ?? 'Narrative unavailable.'}
+                    </p>
+                  </div>
+                  <ReportCharts charts={reportData.charts ?? []} />
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>

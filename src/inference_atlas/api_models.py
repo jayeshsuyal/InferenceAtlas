@@ -120,6 +120,58 @@ class CatalogBrowseResponse(BaseModel):
     total: int
 
 
+class QualityCatalogRow(BaseModel):
+    model_config = ConfigDict(extra="ignore", protected_namespaces=())
+
+    provider: str
+    workload_type: str
+    model_key: str
+    sku_name: str
+    billing_mode: str
+    unit_price_usd: float
+    unit_name: str
+    quality_mapped: bool
+    quality_model_id: Optional[str] = None
+    quality_score_0_100: Optional[float] = None
+    quality_score_adjusted_0_100: Optional[float] = None
+    quality_confidence: Optional[str] = None
+    quality_confidence_weight: Optional[float] = None
+    quality_matched_by: Optional[str] = None
+
+
+class QualityCatalogResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    rows: list[QualityCatalogRow]
+    total: int
+    mapped_count: int
+    unmapped_count: int
+
+
+class QualityInsightPoint(BaseModel):
+    model_config = ConfigDict(extra="ignore", protected_namespaces=())
+
+    provider: str
+    workload_type: str
+    model_key: str
+    sku_name: str
+    unit_name: str
+    unit_price_usd: float
+    quality_score_adjusted_0_100: float
+    quality_confidence: str
+    is_pareto_frontier: bool = False
+
+
+class QualityInsightsResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    points: list[QualityInsightPoint]
+    total_points: int
+    frontier_count: int
+    mapped_count: int
+    unmapped_count: int
+
+
 class InvoiceLineItem(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -242,7 +294,7 @@ class ReportChart(BaseModel):
 class ReportGenerateRequest(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
-    mode: Literal["llm", "catalog"]
+    mode: Literal["llm", "catalog", "audit"]
     title: str = Field(default="InferenceAtlas Optimization Report", min_length=1, max_length=200)
     output_format: Literal["markdown", "html", "pdf"] = "markdown"
     include_charts: bool = True
@@ -250,6 +302,7 @@ class ReportGenerateRequest(BaseModel):
     include_narrative: bool = False
     llm_planning: Optional[LLMPlanningResponse] = None
     catalog_ranking: Optional[CatalogRankingResponse] = None
+    cost_audit: Optional[CostAuditResponse] = None
 
     @model_validator(mode="after")
     def validate_mode_payload(self) -> "ReportGenerateRequest":
@@ -257,6 +310,8 @@ class ReportGenerateRequest(BaseModel):
             raise ValueError("llm_planning is required when mode='llm'")
         if self.mode == "catalog" and self.catalog_ranking is None:
             raise ValueError("catalog_ranking is required when mode='catalog'")
+        if self.mode == "audit" and self.cost_audit is None:
+            raise ValueError("cost_audit is required when mode='audit'")
         return self
 
 
@@ -355,6 +410,20 @@ class CostAuditDataGap(BaseModel):
     why_it_matters: str
 
 
+class CostAuditAlternative(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    provider: str
+    gpu_type: Optional[str] = None
+    deployment_mode: Literal["serverless", "dedicated", "autoscale"]
+    estimated_monthly_cost_usd: float = Field(ge=0)
+    savings_vs_current_usd: float = Field(default=0)
+    savings_vs_current_pct: float = Field(default=0)
+    confidence: Literal["high", "medium", "low"]
+    source: Literal["provider_csv", "heuristic_prior", "current_baseline"]
+    rationale: str
+
+
 class CostAuditLegAudit(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -444,6 +513,7 @@ class CostAuditResponse(BaseModel):
     assumptions: list[str] = Field(default_factory=list)
     data_gaps: list[str] = Field(default_factory=list)
     data_gaps_detailed: list[CostAuditDataGap] = Field(default_factory=list)
+    recommended_options: list[CostAuditAlternative] = Field(default_factory=list)
 
 
 class ReportGenerateResponse(BaseModel):
@@ -452,7 +522,7 @@ class ReportGenerateResponse(BaseModel):
     report_id: str
     generated_at_utc: str
     title: str
-    mode: Literal["llm", "catalog"]
+    mode: Literal["llm", "catalog", "audit"]
     sections: list[ReportSection] = Field(default_factory=list)
     charts: list[ReportChart] = Field(default_factory=list)
     chart_data: dict[str, Any] = Field(default_factory=dict)

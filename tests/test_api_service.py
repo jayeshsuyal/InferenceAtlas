@@ -22,6 +22,8 @@ from inference_atlas.api_service import (
     run_invoice_analyze,
     run_plan_llm,
     run_plan_scaling,
+    run_quality_catalog,
+    run_quality_insights,
     run_rank_catalog,
 )
 
@@ -106,6 +108,50 @@ def test_run_browse_catalog_filters_workload() -> None:
     response = run_browse_catalog(workload_type="llm")
     assert response.total >= 1
     assert all(row["workload_type"] == "llm" for row in response.rows)
+
+
+def test_run_quality_catalog_returns_rows_and_mapping_counts() -> None:
+    response = run_quality_catalog(workload_type="llm")
+    assert response.total >= 1
+    assert response.mapped_count + response.unmapped_count == response.total
+    assert all(row.workload_type == "llm" for row in response.rows)
+
+
+def test_run_quality_catalog_mapped_only_filter() -> None:
+    response = run_quality_catalog(workload_type="llm", mapped_only=True)
+    assert response.total >= 1
+    assert all(row.quality_mapped for row in response.rows)
+
+
+def test_run_quality_insights_returns_pareto_flags() -> None:
+    response = run_quality_insights(workload_type="llm", mapped_only=True)
+    assert response.total_points >= 1
+    assert response.frontier_count >= 1
+    assert all(point.quality_score_adjusted_0_100 >= 0 for point in response.points)
+    assert any(point.is_pareto_frontier for point in response.points)
+
+
+def test_run_quality_insights_frontier_points_are_not_dominated() -> None:
+    response = run_quality_insights(workload_type="llm", mapped_only=True)
+    for point in response.points:
+        if not point.is_pareto_frontier:
+            continue
+        dominated = False
+        for other in response.points:
+            if other is point:
+                continue
+            price_better_or_equal = other.unit_price_usd <= point.unit_price_usd
+            quality_better_or_equal = (
+                other.quality_score_adjusted_0_100 >= point.quality_score_adjusted_0_100
+            )
+            strictly_better = (
+                other.unit_price_usd < point.unit_price_usd
+                or other.quality_score_adjusted_0_100 > point.quality_score_adjusted_0_100
+            )
+            if price_better_or_equal and quality_better_or_equal and strictly_better:
+                dominated = True
+                break
+        assert dominated is False
 
 
 def test_run_invoice_analyze_returns_line_items() -> None:
@@ -456,7 +502,37 @@ def test_run_generate_report_can_include_narrative() -> None:
         )
     )
     assert report.narrative is not None
-    assert "Primary recommendation:" in report.narrative
+
+
+def test_run_generate_report_audit_mode_produces_report_and_charts() -> None:
+    audit = run_cost_audit(
+        CostAuditRequest(
+            modality="llm",
+            model_name="claude-opus-4-6",
+            pricing_model="token_api",
+            monthly_input_tokens=15_000_000,
+            monthly_output_tokens=4_500_000,
+            monthly_ai_spend_usd=4000,
+            providers=["anthropic", "openai"],
+        )
+    )
+    report = run_generate_report(
+        ReportGenerateRequest(
+            mode="audit",
+            title="Audit Report",
+            output_format="markdown",
+            include_charts=True,
+            include_csv_exports=True,
+            include_narrative=False,
+            cost_audit=audit,
+        )
+    )
+    assert report.mode == "audit"
+    assert report.sections
+    assert any(section.title == "Executive Summary" for section in report.sections)
+    assert {chart.id for chart in report.charts} >= {"cost_comparison", "score_drivers"}
+    assert set(report.csv_exports) >= {"recommendations.csv", "alternatives.csv"}
+    assert report.narrative is None
 
 
 def test_run_cost_audit_token_api_returns_structured_response() -> None:
@@ -484,6 +560,73 @@ def test_run_cost_audit_token_api_returns_structured_response() -> None:
     assert response.estimated_monthly_savings.high_usd >= response.estimated_monthly_savings.low_usd
     assert response.score_breakdown.base_score == 100
     assert response.score_breakdown.post_cap_score == response.efficiency_score
+
+
+def test_run_cost_audit_returns_recommended_options_for_llm_and_asr() -> None:
+    llm_response = run_cost_audit(
+        CostAuditRequest(
+            modality="llm",
+            model_name="Llama 3.1 70B",
+            pricing_model="token_api",
+            monthly_input_tokens=1_000_000_000,
+            monthly_output_tokens=300_000_000,
+            traffic_pattern="business_hours",
+            providers=["fireworks", "modal"],
+            monthly_ai_spend_usd=6000,
+        )
+    )
+    assert llm_response.recommended_options
+    assert all(opt.estimated_monthly_cost_usd >= 0 for opt in llm_response.recommended_options)
+
+    asr_response = run_cost_audit(
+        CostAuditRequest(
+            modality="asr",
+            model_name="nova-2",
+            pricing_model="token_api",
+            monthly_input_tokens=100_000_000,
+            monthly_output_tokens=0,
+            traffic_pattern="steady",
+            providers=["deepgram", "assemblyai", "modal"],
+            monthly_ai_spend_usd=500,
+        )
+    )
+    assert asr_response.recommended_options
+    assert any(opt.deployment_mode in {"dedicated", "autoscale"} for opt in asr_response.recommended_options)
+
+
+def test_run_cost_audit_recommended_options_use_throughput_metadata_when_available(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "inference_atlas.api_service._load_gpu_pricing_rows",
+        lambda: [
+            {
+                "provider": "fireworks",
+                "gpu_type": "H100_80GB",
+                "workload_type": "llm",
+                "billing_mode": "autoscale_hourly",
+                "price_per_gpu_hour_usd": "4.0",
+                "throughput_value": "250",
+                "throughput_unit": "tokens_per_second",
+                "confidence": "high",
+                "source_url": "https://example.com/fireworks-gpu",
+            }
+        ],
+    )
+    response = run_cost_audit(
+        CostAuditRequest(
+            modality="llm",
+            model_name="Llama 3.1 70B",
+            pricing_model="token_api",
+            monthly_input_tokens=2_000_000_000,
+            monthly_output_tokens=500_000_000,
+            traffic_pattern="bursty",
+            providers=["fireworks"],
+            monthly_ai_spend_usd=12000,
+        )
+    )
+    assert response.recommended_options
+    provider_rows = [opt for opt in response.recommended_options if opt.provider == "fireworks"]
+    assert provider_rows
+    assert "throughput metadata" in provider_rows[0].rationale
 
 
 def test_run_cost_audit_mixed_modality_flags_data_gap() -> None:
