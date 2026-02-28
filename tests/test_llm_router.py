@@ -110,3 +110,9 @@ def test_router_uses_fallback_for_explain() -> None:
     )
     workload = WorkloadSpec(tokens_per_day=1000, pattern="steady", model_key="llama_8b")
     assert router.explain("summary", workload) == "fallback explanation"
+
+
+def test_router_default_order_is_opus_then_gpt() -> None:
+    cfg = RouterConfig()
+    assert cfg.primary_provider == "opus_4_6"
+    assert cfg.fallback_provider == "gpt_5_2"

@@ -466,7 +466,7 @@ export interface ReportSection {
 }
 
 export interface ReportGenerateRequest {
-  mode: 'llm' | 'catalog'
+  mode: 'llm' | 'catalog' | 'audit'
   title?: string
   output_format?: 'markdown' | 'html' | 'pdf'
   include_charts?: boolean
@@ -474,13 +474,14 @@ export interface ReportGenerateRequest {
   include_narrative?: boolean
   llm_planning?: LLMPlanningResponse
   catalog_ranking?: CatalogRankingResponse
+  cost_audit?: CostAuditResponse
 }
 
 export interface ReportGenerateResponse {
   report_id: string
   generated_at_utc: string
   title: string
-  mode: 'llm' | 'catalog'
+  mode: 'llm' | 'catalog' | 'audit'
   sections: ReportSection[]
   chart_data: Record<string, unknown>
   charts?: ReportChart[]

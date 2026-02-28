@@ -294,7 +294,7 @@ class ReportChart(BaseModel):
 class ReportGenerateRequest(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
-    mode: Literal["llm", "catalog"]
+    mode: Literal["llm", "catalog", "audit"]
     title: str = Field(default="InferenceAtlas Optimization Report", min_length=1, max_length=200)
     output_format: Literal["markdown", "html", "pdf"] = "markdown"
     include_charts: bool = True
@@ -302,6 +302,7 @@ class ReportGenerateRequest(BaseModel):
     include_narrative: bool = False
     llm_planning: Optional[LLMPlanningResponse] = None
     catalog_ranking: Optional[CatalogRankingResponse] = None
+    cost_audit: Optional[CostAuditResponse] = None
 
     @model_validator(mode="after")
     def validate_mode_payload(self) -> "ReportGenerateRequest":
@@ -309,6 +310,8 @@ class ReportGenerateRequest(BaseModel):
             raise ValueError("llm_planning is required when mode='llm'")
         if self.mode == "catalog" and self.catalog_ranking is None:
             raise ValueError("catalog_ranking is required when mode='catalog'")
+        if self.mode == "audit" and self.cost_audit is None:
+            raise ValueError("cost_audit is required when mode='audit'")
         return self
 
 
@@ -519,7 +522,7 @@ class ReportGenerateResponse(BaseModel):
     report_id: str
     generated_at_utc: str
     title: str
-    mode: Literal["llm", "catalog"]
+    mode: Literal["llm", "catalog", "audit"]
     sections: list[ReportSection] = Field(default_factory=list)
     charts: list[ReportChart] = Field(default_factory=list)
     chart_data: dict[str, Any] = Field(default_factory=dict)

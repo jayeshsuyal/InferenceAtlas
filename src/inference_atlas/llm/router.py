@@ -15,8 +15,8 @@ from inference_atlas.llm.schema import WorkloadSpec, validate_workload_payload
 class RouterConfig:
     """Router configuration with primary/fallback provider names."""
 
-    primary_provider: str = "gpt_5_2"
-    fallback_provider: Optional[str] = "opus_4_6"
+    primary_provider: str = "opus_4_6"
+    fallback_provider: Optional[str] = "gpt_5_2"
 
 
 def build_default_adapters() -> dict[str, LLMAdapter]:

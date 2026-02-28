@@ -821,6 +821,7 @@ export async function generateReport(req: ReportGenerateRequest): Promise<Report
 
     const llmPlans = req.llm_planning?.plans ?? []
     const catalogOffers = req.catalog_ranking?.offers ?? []
+    const audit = req.cost_audit
     const topLLM = llmPlans[0]
     const topCatalog = catalogOffers[0]
 
@@ -859,6 +860,23 @@ export async function generateReport(req: ReportGenerateRequest): Promise<Report
       relaxation_trace: req.catalog_ranking?.relaxation_steps ?? [],
       confidence_distribution: catalogOffers.reduce<Record<string, number>>((acc, row) => {
         acc[row.confidence] = (acc[row.confidence] ?? 0) + 1
+        return acc
+      }, {}),
+    }
+    const auditChartData = {
+      cost_by_option: (audit?.recommended_options ?? []).map((opt) => ({
+        provider: opt.provider,
+        gpu_type: opt.gpu_type,
+        deployment_mode: opt.deployment_mode,
+        estimated_monthly_cost_usd: opt.estimated_monthly_cost_usd,
+        savings_vs_current_usd: opt.savings_vs_current_usd,
+        savings_vs_current_pct: opt.savings_vs_current_pct,
+        confidence: opt.confidence,
+        source: opt.source,
+      })),
+      score_breakdown: audit?.score_breakdown ?? {},
+      recommendation_mix: (audit?.recommendations ?? []).reduce<Record<string, number>>((acc, row) => {
+        acc[row.recommendation_type] = (acc[row.recommendation_type] ?? 0) + 1
         return acc
       }, {}),
     }
@@ -919,7 +937,8 @@ export async function generateReport(req: ReportGenerateRequest): Promise<Report
               ],
             },
           ]
-        : [
+        : mode === 'catalog'
+        ? [
             {
               id: 'cost_comparison',
               title: 'Cost Comparison',
@@ -963,6 +982,50 @@ export async function generateReport(req: ReportGenerateRequest): Promise<Report
               ],
             },
           ]
+        : [
+            {
+              id: 'cost_comparison',
+              title: 'Cost Comparison',
+              type: 'bar',
+              x_label: 'Option',
+              y_label: 'Monthly Cost (USD)',
+              sort_key: 'cost',
+              legend: ['Monthly Cost'],
+              series: [
+                {
+                  id: 'monthly_cost_usd',
+                  label: 'Monthly Cost',
+                  unit: 'usd',
+                  points: (audit?.recommended_options ?? []).map((opt, idx) => ({
+                    rank: idx + 1,
+                    provider: opt.provider,
+                    value: opt.estimated_monthly_cost_usd,
+                  })),
+                },
+              ],
+            },
+            {
+              id: 'score_drivers',
+              title: 'Score Drivers',
+              type: 'bar',
+              x_label: 'Driver',
+              y_label: 'Points',
+              sort_key: 'rank',
+              legend: ['Points'],
+              series: [
+                {
+                  id: 'score_points',
+                  label: 'Points',
+                  unit: 'count',
+                  points: [
+                    { x: 'penalties', value: audit?.score_breakdown?.penalty_points ?? 0 },
+                    { x: 'bonuses', value: audit?.score_breakdown?.bonus_points ?? 0 },
+                    { x: 'major_flags', value: audit?.score_breakdown?.major_flags ?? 0 },
+                  ],
+                },
+              ],
+            },
+          ]
 
     const sections =
       mode === 'llm'
@@ -991,7 +1054,8 @@ export async function generateReport(req: ReportGenerateRequest): Promise<Report
               ],
             },
           ]
-        : [
+        : mode === 'catalog'
+        ? [
             {
               title: 'Executive Summary',
               bullets: [
@@ -1014,6 +1078,28 @@ export async function generateReport(req: ReportGenerateRequest): Promise<Report
                 `Excluded offers count: ${req.catalog_ranking?.excluded_count ?? 0}.`,
                 ...(req.catalog_ranking?.warnings ?? []).slice(0, 4),
               ],
+            },
+          ]
+        : [
+            {
+              title: 'Executive Summary',
+              bullets: [
+                `Efficiency score: ${audit?.efficiency_score ?? 'n/a'}/100.`,
+                `Verdict: ${audit?.pricing_model_verdict?.verdict ?? 'unknown'}.`,
+                `Estimated monthly savings: $${(audit?.estimated_monthly_savings?.low_usd ?? 0).toFixed(0)} – $${(audit?.estimated_monthly_savings?.high_usd ?? 0).toFixed(0)}.`,
+              ],
+            },
+            {
+              title: 'Top Recommendations',
+              bullets: (audit?.recommendations ?? []).slice(0, 6).map(
+                (rec) => `${rec.title} · ${rec.priority} · ${rec.estimated_savings_pct.toFixed(0)}%`
+              ),
+            },
+            {
+              title: 'Alternatives',
+              bullets: (audit?.recommended_options ?? []).slice(0, 6).map(
+                (opt) => `${opt.provider} ${opt.gpu_type ?? ''} ${opt.deployment_mode} · $${opt.estimated_monthly_cost_usd.toFixed(0)}/mo`
+              ),
             },
           ]
 
@@ -1045,11 +1131,18 @@ export async function generateReport(req: ReportGenerateRequest): Promise<Report
                 `${plan.rank},${plan.provider_id},${plan.provider_name},${plan.offering_id},${plan.monthly_cost_usd},${plan.risk.total_risk}`
             ),
           ].join('\n') + '\n'
-        : [
+        : mode === 'catalog'
+        ? [
             'rank,provider,sku_name,monthly_estimate_usd,unit_price_usd,unit_name,confidence',
             ...catalogOffers.map(
               (offer) =>
                 `${offer.rank},${offer.provider},${offer.sku_name},${offer.monthly_estimate_usd ?? ''},${offer.unit_price_usd},${offer.unit_name},${offer.confidence}`
+            ),
+          ].join('\n') + '\n'
+        : [
+            'recommendation_type,title,priority,estimated_savings_pct',
+            ...(audit?.recommendations ?? []).map(
+              (rec) => `${rec.recommendation_type},${rec.title},${rec.priority},${rec.estimated_savings_pct}`
             ),
           ].join('\n') + '\n'
 
@@ -1061,10 +1154,18 @@ export async function generateReport(req: ReportGenerateRequest): Promise<Report
               (row) => `${row.provider},${row.status},${row.reason}`
             ),
           ].join('\n') + '\n'
-        : [
+        : mode === 'catalog'
+        ? [
             'provider,status,reason',
             ...(req.catalog_ranking?.provider_diagnostics ?? []).map(
               (row) => `${row.provider},${row.status},${row.reason}`
+            ),
+          ].join('\n') + '\n'
+        : [
+            'provider,gpu_type,deployment_mode,estimated_monthly_cost_usd,savings_vs_current_usd,savings_vs_current_pct,confidence,source',
+            ...(audit?.recommended_options ?? []).map(
+              (opt) =>
+                `${opt.provider},${opt.gpu_type ?? ''},${opt.deployment_mode},${opt.estimated_monthly_cost_usd},${opt.savings_vs_current_usd},${opt.savings_vs_current_pct},${opt.confidence},${opt.source}`
             ),
           ].join('\n') + '\n'
 
@@ -1075,7 +1176,13 @@ export async function generateReport(req: ReportGenerateRequest): Promise<Report
       mode,
       sections,
       charts: includeCharts ? charts : [],
-      chart_data: includeCharts ? (mode === 'llm' ? llmChartData : catalogChartData) : {},
+      chart_data: includeCharts
+        ? mode === 'llm'
+          ? llmChartData
+          : mode === 'catalog'
+          ? catalogChartData
+          : auditChartData
+        : {},
       metadata: {
         chart_schema_version: 'v1.2-mock',
         catalog_generated_at_utc: now,
@@ -1089,9 +1196,11 @@ export async function generateReport(req: ReportGenerateRequest): Promise<Report
           ? topLLM
             ? `Primary recommendation: ${topLLM.provider_name} is rank #1 at $${topLLM.monthly_cost_usd.toFixed(2)}/month with risk ${topLLM.risk.total_risk.toFixed(2)}.`
             : 'Primary recommendation unavailable because no LLM plans were returned.'
-          : topCatalog
+          : mode === 'catalog'
+          ? topCatalog
           ? `Primary recommendation: ${topCatalog.provider} ${topCatalog.sku_name} is rank #1 at $${(topCatalog.monthly_estimate_usd ?? 0).toFixed(2)}/month.`
           : 'Primary recommendation unavailable because no catalog offers were returned.'
+          : `Primary recommendation: ${audit?.pricing_model_verdict?.reason ?? 'No audit rationale available.'}`
         : null,
       csv_exports: includeCsv
         ? {

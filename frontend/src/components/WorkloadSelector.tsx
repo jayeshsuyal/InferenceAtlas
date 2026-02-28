@@ -38,7 +38,7 @@ export function WorkloadSelector({ selected, onSelect }: WorkloadSelectorProps) 
 
   return (
     <div className="space-y-4 animate-enter">
-      <div>
+      <div className="hero-panel p-4">
         <h2 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>
           Select workload category
         </h2>
@@ -72,7 +72,7 @@ export function WorkloadSelector({ selected, onSelect }: WorkloadSelectorProps) 
                   : {}),
               }}
               className={cn(
-                'group relative flex flex-col gap-2.5 rounded-lg border p-3.5 text-left cursor-pointer',
+                'group relative flex flex-col gap-2.5 rounded-xl border p-3.5 text-left cursor-pointer',
                 'transition-all duration-200 ease-out animate-enter',
                 'active:translate-y-0 active:scale-[0.98]',
                 isActive

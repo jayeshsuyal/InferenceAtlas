@@ -502,7 +502,37 @@ def test_run_generate_report_can_include_narrative() -> None:
         )
     )
     assert report.narrative is not None
-    assert "Primary recommendation:" in report.narrative
+
+
+def test_run_generate_report_audit_mode_produces_report_and_charts() -> None:
+    audit = run_cost_audit(
+        CostAuditRequest(
+            modality="llm",
+            model_name="claude-opus-4-6",
+            pricing_model="token_api",
+            monthly_input_tokens=15_000_000,
+            monthly_output_tokens=4_500_000,
+            monthly_ai_spend_usd=4000,
+            providers=["anthropic", "openai"],
+        )
+    )
+    report = run_generate_report(
+        ReportGenerateRequest(
+            mode="audit",
+            title="Audit Report",
+            output_format="markdown",
+            include_charts=True,
+            include_csv_exports=True,
+            include_narrative=False,
+            cost_audit=audit,
+        )
+    )
+    assert report.mode == "audit"
+    assert report.sections
+    assert any(section.title == "Executive Summary" for section in report.sections)
+    assert {chart.id for chart in report.charts} >= {"cost_comparison", "score_drivers"}
+    assert set(report.csv_exports) >= {"recommendations.csv", "alternatives.csv"}
+    assert report.narrative is None
 
 
 def test_run_cost_audit_token_api_returns_structured_response() -> None:

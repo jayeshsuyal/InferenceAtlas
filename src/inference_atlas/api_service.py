@@ -1571,6 +1571,62 @@ def _catalog_report_sections(response: CatalogRankingResponse) -> list[ReportSec
     ]
 
 
+def _audit_report_sections(response: CostAuditResponse) -> list[ReportSection]:
+    return [
+        ReportSection(
+            title="Executive Summary",
+            bullets=[
+                f"Efficiency score: {response.efficiency_score}/100.",
+                (
+                    "Pricing verdict: "
+                    f"{response.pricing_model_verdict.verdict.replace('_', ' ')} "
+                    f"({response.pricing_model_verdict.current_model})."
+                ),
+                (
+                    "Estimated monthly savings range: "
+                    f"{_format_money(response.estimated_monthly_savings.low_usd)} to "
+                    f"{_format_money(response.estimated_monthly_savings.high_usd)}."
+                ),
+            ],
+        ),
+        ReportSection(
+            title="Top Recommendations",
+            bullets=[
+                (
+                    f"{rec.title} · {rec.priority} priority · "
+                    f"estimated {rec.estimated_savings_pct:.1f}% savings"
+                )
+                for rec in response.recommendations[:5]
+            ]
+            or ["No recommendations returned."],
+        ),
+        ReportSection(
+            title="Alternative Deployment Options",
+            bullets=[
+                (
+                    f"{opt.provider} · {opt.deployment_mode}"
+                    f"{f' · {opt.gpu_type}' if opt.gpu_type else ''} · "
+                    f"{_format_money(opt.estimated_monthly_cost_usd)} / month · "
+                    f"save {_format_money(opt.savings_vs_current_usd)} "
+                    f"({opt.savings_vs_current_pct:.1f}%)."
+                )
+                for opt in response.recommended_options[:5]
+            ]
+            or ["No alternative options returned."],
+        ),
+        ReportSection(
+            title="Explainability",
+            bullets=[
+                f"Penalty points: {response.score_breakdown.penalty_points}.",
+                f"Bonus points: {response.score_breakdown.bonus_points}.",
+                f"Major flags: {response.score_breakdown.major_flags}.",
+                *[f"Red flag: {flag}" for flag in response.red_flags[:3]],
+                *[f"Data gap: {gap}" for gap in response.data_gaps[:3]],
+            ],
+        ),
+    ]
+
+
 def _sections_to_markdown(title: str, mode: str, generated_at_utc: str, sections: list[ReportSection]) -> str:
     lines = [f"# {title}", "", f"- Mode: `{mode}`", f"- Generated at (UTC): `{generated_at_utc}`", ""]
     for section in sections:
@@ -1703,12 +1759,19 @@ def _build_report_narrative(
             f"This result is grounded to the current run payload and catalog snapshot. "
             f"Returned plans: {len(top_cost)}; top-plan risk={risk_lead if risk_lead is not None else 'n/a'}."
         )
-    top_cost = chart_data.get("cost_by_rank", [])
-    trace = chart_data.get("relaxation_trace", [])
+    if mode == "catalog":
+        top_cost = chart_data.get("cost_by_rank", [])
+        trace = chart_data.get("relaxation_trace", [])
+        return (
+            f"Primary recommendation: {summary_bullet} "
+            f"This ranking uses current catalog rows only; fallback steps attempted={len(trace)}; "
+            f"offers returned={len(top_cost)}."
+        )
+    alternatives = chart_data.get("cost_by_option", [])
     return (
         f"Primary recommendation: {summary_bullet} "
-        f"This ranking uses current catalog rows only; fallback steps attempted={len(trace)}; "
-        f"offers returned={len(top_cost)}."
+        "This audit is grounded to deterministic score math and recommendation logic. "
+        f"Alternative options returned={len(alternatives)}."
     )
 
 
@@ -1718,13 +1781,17 @@ def _build_llm_generated_report_narrative(
     chart_data: dict[str, Any],
 ) -> str | None:
     # Keep LLM narrative optional and fail-safe.
-    if mode != "llm":
+    if mode not in {"llm", "audit"}:
         return None
     if not (os.getenv("OPENAI_API_KEY") or os.getenv("ANTHROPIC_API_KEY")):
         return None
     try:
         router = LLMRouter()
-        top_cost_rows = chart_data.get("cost_by_rank", [])
+        top_cost_rows = (
+            chart_data.get("cost_by_rank", [])
+            if mode == "llm"
+            else chart_data.get("cost_by_option", [])
+        )
         top_summary = ""
         if isinstance(top_cost_rows, list) and top_cost_rows:
             top = top_cost_rows[0]
@@ -1933,34 +2000,64 @@ def _build_report_csv_exports(payload: ReportGenerateRequest) -> dict[str, str]:
             "ranked_results.csv": _rows_to_csv_text(plans_rows),
             "provider_diagnostics.csv": _rows_to_csv_text(diagnostics_rows),
         }
-
-    assert payload.catalog_ranking is not None
-    offer_rows = [
-        {
-            "rank": offer.rank,
-            "provider": offer.provider,
-            "sku_name": offer.sku_name,
-            "billing_mode": offer.billing_mode,
-            "unit_name": offer.unit_name,
-            "unit_price_usd": offer.unit_price_usd,
-            "normalized_price": offer.normalized_price,
-            "monthly_estimate_usd": offer.monthly_estimate_usd,
-            "confidence": offer.confidence,
-            "required_replicas": offer.required_replicas,
-            "capacity_check": offer.capacity_check,
-            "previous_unit_price_usd": offer.previous_unit_price_usd,
-            "price_change_abs_usd": offer.price_change_abs_usd,
-            "price_change_pct": offer.price_change_pct,
+    if payload.mode == "catalog":
+        assert payload.catalog_ranking is not None
+        offer_rows = [
+            {
+                "rank": offer.rank,
+                "provider": offer.provider,
+                "sku_name": offer.sku_name,
+                "billing_mode": offer.billing_mode,
+                "unit_name": offer.unit_name,
+                "unit_price_usd": offer.unit_price_usd,
+                "normalized_price": offer.normalized_price,
+                "monthly_estimate_usd": offer.monthly_estimate_usd,
+                "confidence": offer.confidence,
+                "required_replicas": offer.required_replicas,
+                "capacity_check": offer.capacity_check,
+                "previous_unit_price_usd": offer.previous_unit_price_usd,
+                "price_change_abs_usd": offer.price_change_abs_usd,
+                "price_change_pct": offer.price_change_pct,
+            }
+            for offer in payload.catalog_ranking.offers
+        ]
+        diagnostics_rows = [
+            {"provider": d.provider, "status": d.status, "reason": d.reason}
+            for d in payload.catalog_ranking.provider_diagnostics
+        ]
+        return {
+            "ranked_results.csv": _rows_to_csv_text(offer_rows),
+            "provider_diagnostics.csv": _rows_to_csv_text(diagnostics_rows),
         }
-        for offer in payload.catalog_ranking.offers
+
+    assert payload.cost_audit is not None
+    recommendation_rows = [
+        {
+            "recommendation_type": rec.recommendation_type,
+            "title": rec.title,
+            "priority": rec.priority,
+            "estimated_savings_pct": rec.estimated_savings_pct,
+            "rationale": rec.rationale,
+        }
+        for rec in payload.cost_audit.recommendations
     ]
-    diagnostics_rows = [
-        {"provider": d.provider, "status": d.status, "reason": d.reason}
-        for d in payload.catalog_ranking.provider_diagnostics
+    alternatives_rows = [
+        {
+            "provider": opt.provider,
+            "gpu_type": opt.gpu_type,
+            "deployment_mode": opt.deployment_mode,
+            "estimated_monthly_cost_usd": opt.estimated_monthly_cost_usd,
+            "savings_vs_current_usd": opt.savings_vs_current_usd,
+            "savings_vs_current_pct": opt.savings_vs_current_pct,
+            "confidence": opt.confidence,
+            "source": opt.source,
+            "rationale": opt.rationale,
+        }
+        for opt in payload.cost_audit.recommended_options
     ]
     return {
-        "ranked_results.csv": _rows_to_csv_text(offer_rows),
-        "provider_diagnostics.csv": _rows_to_csv_text(diagnostics_rows),
+        "recommendations.csv": _rows_to_csv_text(recommendation_rows),
+        "alternatives.csv": _rows_to_csv_text(alternatives_rows),
     }
 
 
@@ -2240,6 +2337,90 @@ def _build_catalog_report_charts(response: CatalogRankingResponse) -> list[Repor
     ]
 
 
+def _build_audit_report_chart_data(response: CostAuditResponse) -> dict[str, Any]:
+    return {
+        "cost_by_option": [
+            {
+                "provider": opt.provider,
+                "gpu_type": opt.gpu_type,
+                "deployment_mode": opt.deployment_mode,
+                "estimated_monthly_cost_usd": opt.estimated_monthly_cost_usd,
+                "savings_vs_current_usd": opt.savings_vs_current_usd,
+                "savings_vs_current_pct": opt.savings_vs_current_pct,
+                "confidence": opt.confidence,
+                "source": opt.source,
+            }
+            for opt in response.recommended_options
+        ],
+        "score_breakdown": {
+            "base_score": response.score_breakdown.base_score,
+            "penalty_points": response.score_breakdown.penalty_points,
+            "bonus_points": response.score_breakdown.bonus_points,
+            "major_flags": response.score_breakdown.major_flags,
+            "pre_cap_score": response.score_breakdown.pre_cap_score,
+            "post_cap_score": response.score_breakdown.post_cap_score,
+            "combined_savings_pct": response.score_breakdown.combined_savings_pct,
+        },
+        "recommendation_mix": dict(
+            Counter(rec.recommendation_type for rec in response.recommendations)
+        ),
+    }
+
+
+def _build_audit_report_charts(response: CostAuditResponse) -> list[ReportChart]:
+    options = sorted(response.recommended_options, key=lambda opt: opt.estimated_monthly_cost_usd)
+    breakdown = response.score_breakdown
+    return [
+        ReportChart(
+            id="cost_comparison",
+            title="Cost Comparison",
+            type="bar",
+            x_label="Option",
+            y_label="Monthly Cost (USD)",
+            series=[
+                ReportChartSeries(
+                    id="monthly_cost_usd",
+                    label="Monthly Cost",
+                    unit="usd",
+                    points=[
+                        {
+                            "rank": idx + 1,
+                            "provider": opt.provider,
+                            "gpu_type": opt.gpu_type,
+                            "deployment_mode": opt.deployment_mode,
+                            "value": opt.estimated_monthly_cost_usd,
+                        }
+                        for idx, opt in enumerate(options[:8])
+                    ],
+                )
+            ],
+            legend=["Monthly Cost"],
+            meta={"sort": "monthly_cost_asc"},
+        ),
+        ReportChart(
+            id="score_drivers",
+            title="Score Drivers",
+            type="bar",
+            x_label="Driver",
+            y_label="Points",
+            series=[
+                ReportChartSeries(
+                    id="score_points",
+                    label="Points",
+                    unit="count",
+                    points=[
+                        {"x": "penalties", "value": breakdown.penalty_points},
+                        {"x": "bonuses", "value": breakdown.bonus_points},
+                        {"x": "major_flags", "value": breakdown.major_flags},
+                    ],
+                )
+            ],
+            legend=["Points"],
+            meta={"post_cap_score": breakdown.post_cap_score},
+        ),
+    ]
+
+
 def run_generate_report(payload: ReportGenerateRequest) -> ReportGenerateResponse:
     generated_at_utc = datetime.now(timezone.utc).isoformat()
     catalog_meta = get_catalog_v2_metadata()
@@ -2252,7 +2433,7 @@ def run_generate_report(payload: ReportGenerateRequest) -> ReportGenerateRespons
         )
         chart_data = _build_llm_report_chart_data(payload.llm_planning)
         charts = _build_llm_report_charts(payload.llm_planning)
-    else:
+    elif payload.mode == "catalog":
         assert payload.catalog_ranking is not None
         sections = _catalog_report_sections(payload.catalog_ranking)
         scaling_summary = run_plan_scaling(
@@ -2260,6 +2441,11 @@ def run_generate_report(payload: ReportGenerateRequest) -> ReportGenerateRespons
         )
         chart_data = _build_catalog_report_chart_data(payload.catalog_ranking)
         charts = _build_catalog_report_charts(payload.catalog_ranking)
+    else:
+        assert payload.cost_audit is not None
+        sections = _audit_report_sections(payload.cost_audit)
+        chart_data = _build_audit_report_chart_data(payload.cost_audit)
+        charts = _build_audit_report_charts(payload.cost_audit)
     if scaling_summary is not None:
         gpu_label = (
             str(scaling_summary.estimated_gpu_count)

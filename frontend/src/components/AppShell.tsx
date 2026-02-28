@@ -73,9 +73,19 @@ export function AppShell() {
       )}
 
       {/* Main content */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative z-10">
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative z-10 p-2 lg:p-3">
+        <div className="hidden lg:flex items-center justify-between px-4 py-2 mb-2 rounded-xl control-shell">
+          <div className="flex items-center gap-2">
+            <span className="status-chip status-chip-brand">Inference Ready</span>
+            <span className="status-chip">Catalog Synced</span>
+          </div>
+          <span className="text-[11px] font-mono" style={{ color: 'var(--text-disabled)' }}>
+            Desktop Demo Surface
+          </span>
+        </div>
+
         {/* Mobile header */}
-        <header className="lg:hidden flex items-center gap-3 px-4 py-3 border-b border-white/[0.06] backdrop-blur-sm" style={{ background: 'var(--bg-surface)' }}>
+        <header className="lg:hidden flex items-center gap-3 px-4 py-3 border-b border-white/[0.06] backdrop-blur-sm rounded-t-xl control-shell" style={{ background: 'var(--bg-surface)' }}>
           <Button
             variant="ghost"
             size="icon-sm"
@@ -99,7 +109,7 @@ export function AppShell() {
         </header>
 
         {/* Page content */}
-        <main className="flex-1 overflow-y-auto">
+        <main className="flex-1 overflow-y-auto rounded-xl control-shell">
           <Outlet />
         </main>
       </div>

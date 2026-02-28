@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { ArrowLeft, SlidersHorizontal, Sparkles, X } from 'lucide-react'
-import { useSearchParams } from 'react-router-dom'
+import { useLocation, useSearchParams } from 'react-router-dom'
 import { useAIContext } from '@/context/AIContext'
 import { WorkloadSelector } from '@/components/WorkloadSelector'
 import { LLMForm } from '@/components/optimize/LLMForm'
@@ -14,15 +14,48 @@ import type {
   LLMPlanningResponse,
   CatalogRankingResponse,
   CopilotApplyPayload,
+  CostAuditAlternative,
 } from '@/services/types'
 import type { WorkloadTypeId } from '@/lib/constants'
 import { WORKLOAD_TYPES } from '@/lib/constants'
+import { Badge } from '@/components/ui/badge'
 
 type Step = 'select' | 'configure'
 type ConfigMode = 'copilot' | 'guided'
 
+function canonicalWorkloadFromQuery(raw: string | null): WorkloadTypeId | null {
+  if (!raw) return null
+  const token = raw.trim().toLowerCase()
+  if (token === 'llm') return 'llm'
+  if (token === 'speech_to_text' || token === 'asr' || token === 'stt') return 'speech_to_text'
+  return null
+}
+
+function formatUsd(value: number): string {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    maximumFractionDigits: 0,
+  }).format(value)
+}
+
+function providerNameFromId(provider: string): string {
+  const token = provider.replace(/[_-]/g, ' ').trim()
+  return token
+    .split(/\s+/)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ')
+}
+
+interface AuditNavState {
+  auditRecommendedOptions?: CostAuditAlternative[]
+  auditModelName?: string
+}
+
 export function OptimizePage() {
   const [searchParams] = useSearchParams()
+  const location = useLocation()
+  const locationState = (location.state ?? {}) as AuditNavState
   const [step, setStep] = useState<Step>('select')
   const [mode, setMode] = useState<ConfigMode>('copilot')
   const [workload, setWorkload] = useState<WorkloadTypeId | null>(null)
@@ -31,17 +64,21 @@ export function OptimizePage() {
   const [error, setError] = useState<string | null>(null)
   const [llmResult, setLlmResult] = useState<LLMPlanningResponse | null>(null)
   const [catalogResult, setCatalogResult] = useState<CatalogRankingResponse | null>(null)
+  const [auditRecommendedOptions, setAuditRecommendedOptions] = useState<CostAuditAlternative[]>([])
+  const [auditModelName, setAuditModelName] = useState<string | null>(null)
   const { setAIContext } = useAIContext()
 
   useEffect(() => {
     if (step !== 'select' || workload !== null) return
-    const queryWorkload = searchParams.get('workload')
-    if (queryWorkload !== 'llm' && queryWorkload !== 'speech_to_text') return
+    const queryFromAudit = searchParams.get('from') === 'audit' || searchParams.get('source') === 'audit'
+    const queryWorkload = canonicalWorkloadFromQuery(searchParams.get('workload'))
+    if (!queryFromAudit && queryWorkload === null) return
 
     const qTokens = Number(searchParams.get('tokens_per_day') ?? '')
     const qBudget = Number(searchParams.get('monthly_budget') ?? '')
+    const resolvedWorkload: WorkloadTypeId = queryWorkload ?? 'llm'
 
-    if (queryWorkload === 'llm') {
+    if (resolvedWorkload === 'llm') {
       const seeded: Partial<LLMFormValues> = {}
       if (Number.isFinite(qTokens) && qTokens > 0) seeded.tokens_per_day = qTokens
       if (Number.isFinite(qBudget) && qBudget > 0) seeded.monthly_budget_max_usd = qBudget
@@ -51,11 +88,13 @@ export function OptimizePage() {
       if (Number.isFinite(qBudget) && qBudget > 0) seeded.monthly_budget_max_usd = qBudget
       setInitialValues(seeded as CopilotApplyPayload)
     }
-    setWorkload(queryWorkload)
+    setWorkload(resolvedWorkload)
     setMode('guided')
     setStep('configure')
-    setAIContext({ workload_type: queryWorkload, providers: [] })
-  }, [searchParams, setAIContext, step, workload])
+    setAuditRecommendedOptions(locationState.auditRecommendedOptions ?? [])
+    setAuditModelName(locationState.auditModelName ?? null)
+    setAIContext({ workload_type: resolvedWorkload, providers: [] })
+  }, [locationState.auditModelName, locationState.auditRecommendedOptions, searchParams, setAIContext, step, workload])
 
   function handleWorkloadSelect(id: WorkloadTypeId) {
     setWorkload(id)
@@ -149,16 +188,16 @@ export function OptimizePage() {
 
 
   return (
-    <div className="max-w-3xl mx-auto px-4 py-8 sm:px-6">
+    <div className="max-w-5xl mx-auto px-5 py-8 sm:px-8">
       {/* ── Page header (select step only) ── */}
       {step === 'select' && (
-        <div className="mb-8 page-section">
-          <div className="eyebrow mb-2">Cost Intelligence</div>
+        <div className="mb-8 page-section hero-panel p-5 sm:p-6">
+          <div className="headline-kicker mb-2">Cost Intelligence</div>
           <h1 className="text-2xl font-bold tracking-tight mb-2">
             <span className="text-gradient">Optimize</span>{' '}
             <span style={{ color: 'var(--text-primary)' }}>Workload</span>
           </h1>
-          <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+          <p className="text-sm max-w-2xl" style={{ color: 'var(--text-secondary)' }}>
             Pick a workload category and we'll rank the most cost-effective inference options
             across every major AI provider.
           </p>
@@ -178,7 +217,7 @@ export function OptimizePage() {
       )}
 
       {/* Step indicator */}
-      <div className="flex items-center gap-2 mb-6">
+      <div className="flex items-center gap-2 mb-6 px-1">
         {(['select', 'configure'] as Step[]).map((s, i) => {
           const isActive = step === s
           const isDone = step === 'configure' && s === 'select'
@@ -217,8 +256,8 @@ export function OptimizePage() {
       {step === 'configure' && workload && (
         <div className="space-y-5 animate-enter">
           {/* Workload header */}
-          <div>
-            <div className="eyebrow mb-1">{workloadMeta?.label ?? workload.replace(/_/g, ' ')}</div>
+          <div className="hero-panel p-4 sm:p-5">
+            <div className="headline-kicker mb-1">{workloadMeta?.label ?? workload.replace(/_/g, ' ')}</div>
             <h2 className="text-lg font-bold tracking-tight" style={{ color: 'var(--text-primary)' }}>
               Cost Optimization
             </h2>
@@ -264,6 +303,58 @@ export function OptimizePage() {
           {/* ── Guided mode ── */}
           {mode === 'guided' && (
             <>
+              {auditRecommendedOptions.length > 0 && (
+                <div className="rounded-xl border p-4 space-y-3" style={{ borderColor: 'var(--brand-border)', background: 'rgba(34,211,238,0.06)' }}>
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div>
+                      <div className="eyebrow mb-0.5">From Cost Audit</div>
+                      <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                        {auditModelName ? `Top alternatives for ${auditModelName}` : 'Top alternatives from your audit run'}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setAuditRecommendedOptions([])}
+                      className="text-[11px] transition-colors hover:opacity-100"
+                      style={{ color: 'var(--text-disabled)' }}
+                    >
+                      hide
+                    </button>
+                  </div>
+                  <div className="space-y-2">
+                    {auditRecommendedOptions.slice(0, 3).map((opt, idx) => (
+                      <div
+                        key={`${opt.provider}-${opt.gpu_type ?? 'none'}-${opt.deployment_mode}-${idx}`}
+                        className="rounded-lg border px-3 py-2 flex items-start justify-between gap-3"
+                        style={{ borderColor: 'var(--border-default)', background: 'var(--bg-elevated)' }}
+                      >
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>
+                              {providerNameFromId(opt.provider)}
+                            </span>
+                            <Badge variant="default">{opt.deployment_mode}</Badge>
+                            {opt.gpu_type ? <Badge variant="violet">{opt.gpu_type}</Badge> : null}
+                          </div>
+                          <p className="text-[11px] mt-1" style={{ color: 'var(--text-tertiary)' }}>
+                            {opt.rationale}
+                          </p>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <div className="micro-label mb-0.5">Monthly</div>
+                          <div className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>
+                            {formatUsd(opt.estimated_monthly_cost_usd)}
+                          </div>
+                          <div className="text-[11px]" style={{ color: 'var(--success)' }}>
+                            Save {formatUsd(Math.max(0, opt.savings_vs_current_usd))}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {error && (
                 <div
                   className="rounded-lg px-3 py-2.5 text-xs flex items-start justify-between gap-2 border"
